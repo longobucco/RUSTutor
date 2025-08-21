@@ -1,0 +1,274 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL. Rust-themed learning app design system.
+*/
+
+@layer base {
+  :root {
+    /* Base colors */
+    --background: 20 8% 98%;
+    --foreground: 20 14% 8%;
+
+    /* Card colors */
+    --card: 0 0% 100%;
+    --card-foreground: 20 14% 8%;
+
+    /* Popover colors */
+    --popover: 0 0% 100%;
+    --popover-foreground: 20 14% 8%;
+
+    /* Rust-inspired primary (orange/rust color) */
+    --primary: 12 88% 48%;
+    --primary-foreground: 0 0% 98%;
+    --primary-glow: 18 100% 65%;
+
+    /* Secondary (dark steel blue) */
+    --secondary: 215 25% 27%;
+    --secondary-foreground: 0 0% 98%;
+
+    /* Muted tones */
+    --muted: 20 8% 95%;
+    --muted-foreground: 20 8% 45%;
+
+    /* Accent (warm amber) */
+    --accent: 35 88% 58%;
+    --accent-foreground: 20 14% 8%;
+
+    /* Success (emerald green) */
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 98%;
+
+    /* Warning (amber) */
+    --warning: 38 92% 50%;
+    --warning-foreground: 20 14% 8%;
+
+    /* Destructive */
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+
+    /* Borders and inputs */
+    --border: 20 8% 90%;
+    --input: 20 8% 90%;
+    --ring: 12 88% 48%;
+
+    /* Progress colors */
+    --progress-completed: 142 76% 36%;
+    --progress-review: 38 92% 50%;
+    --progress-not-started: 20 8% 85%;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(12 88% 48%) 0%, hsl(18 100% 65%) 100%);
+    --gradient-secondary: linear-gradient(135deg, hsl(215 25% 27%) 0%, hsl(220 30% 35%) 100%);
+    --gradient-card: linear-gradient(145deg, hsl(0 0% 100%) 0%, hsl(20 8% 98%) 100%);
+    --gradient-hero: linear-gradient(135deg, hsl(12 88% 48%) 0%, hsl(35 88% 58%) 50%, hsl(18 100% 65%) 100%);
+
+    /* Shadows */
+    --shadow-card: 0 4px 12px hsl(20 14% 8% / 0.1);
+    --shadow-elevated: 0 8px 32px hsl(20 14% 8% / 0.12);
+    --shadow-glow: 0 0 24px hsl(12 88% 48% / 0.3);
+
+    /* Animation durations */
+    --transition-fast: 0.15s;
+    --transition-normal: 0.25s;
+    --transition-slow: 0.4s;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+}
+
+@layer utilities {
+  /* Background utilities */
+  .bg-gradient-primary {
+    background: var(--gradient-primary);
+  }
+  
+  .bg-gradient-secondary {
+    background: var(--gradient-secondary);
+  }
+  
+  .bg-gradient-card {
+    background: var(--gradient-card);
+  }
+  
+  .bg-gradient-hero {
+    background: var(--gradient-hero);
+  }
+
+  /* Shadow utilities */
+  .shadow-card {
+    box-shadow: var(--shadow-card);
+  }
+  
+  .shadow-elevated {
+    box-shadow: var(--shadow-elevated);
+  }
+  
+  .shadow-glow {
+    box-shadow: var(--shadow-glow);
+  }
+
+  /* Animation utilities */
+  .transition-fast {
+    transition: all var(--transition-fast) ease;
+  }
+  
+  .transition-normal {
+    transition: all var(--transition-normal) ease;
+  }
+  
+  .transition-slow {
+    transition: all var(--transition-slow) ease;
+  }
+
+  /* Progress states */
+  .progress-completed {
+    color: hsl(var(--success));
+  }
+  
+  .progress-review {
+    color: hsl(var(--warning));
+  }
+  
+  .progress-not-started {
+    color: hsl(var(--progress-not-started));
+  }
+
+  /* Flashcard animations */
+  .flashcard-enter {
+    animation: slideInRight 0.3s ease-out;
+  }
+  
+  .flashcard-exit {
+    animation: slideOutLeft 0.3s ease-out;
+  }
+
+  /* Code syntax highlighting base */
+  .code-rust {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    @apply text-sm bg-muted p-4 rounded-lg border;
+  }
+}
+
+@layer components {
+  /* Flashcard component styles */
+  .flashcard {
+    @apply bg-gradient-card shadow-card rounded-xl p-6 transition-all duration-300;
+  }
+  
+  .flashcard:hover {
+    @apply shadow-elevated;
+  }
+
+  /* Chapter card styles */
+  .chapter-card {
+    @apply bg-card shadow-card rounded-xl p-6 border transition-all duration-300;
+  }
+  
+  .chapter-card:hover {
+    @apply shadow-elevated border-primary/20;
+  }
+
+  /* Progress bar component */
+  .progress-bar {
+    @apply w-full bg-muted rounded-full h-2 overflow-hidden;
+  }
+}
+
+/* Custom keyframes */
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideOutLeft {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 12px hsl(var(--primary) / 0.3);
+  }
+  50% {
+    box-shadow: 0 0 20px hsl(var(--primary) / 0.5);
+  }
+}
