@@ -397,7 +397,7 @@ fn main() {
     id: "review-1",
     title: "Ripasso #1",
     description:
-      "Sfide di verifica su borrowing, slice e mutabilità in Rust (con soluzioni spiegate).",
+      "Sfide di verifica su borrowing, slice e mutabilità (con soluzioni spiegate).",
     icon: "🧩",
     challenges: [
       {
@@ -656,6 +656,191 @@ let v2: Vec<i32> = b.into_vec(); // ritorno a Vec`,
       },
     ],
     totalCards: 12,
+    completedCards: 0,
+    reviewCards: 0,
+  },
+  {
+    id: "review-2",
+    title: "Ripasso #2",
+    description: "Sfide di verifica sul possesso (con soluzioni spiegate).",
+    icon: "🧩",
+    challenges: [
+      {
+        id: "ch-1",
+        prompt:
+          "Perché questo programma è compilato? Perché read_string non è mosso?",
+        code: `fn main() {
+  let read_string = "Dante Alighieri".to_string();
+  let second_string = read_string.to_uppercase();
+  println!("{}\\n{}", read_string, second_string);
+}`,
+        solution: `Alla riga 3 si invoca il metodo "to_uppercase" con firma: "pub fn to_uppercase(&self) -> String".
+Il ricevitore (read_string) è prestato in modo immutabile tramite "&self" (internamente come &str), quindi NON viene mosso né consumato.
+La funzione costruisce e restituisce una NUOVA "String" (second_string) che viene mossa nella variabile di destinazione.
+Di conseguenza, il valore originale (read_string) rimane valido e può essere letto successivamente alla riga 4.`,
+        fixes: [
+          {
+            label:
+              "Versione con mutazione in-place ASCII (evita allocazione extra)",
+            code: `fn main() {
+  let mut s = String::from("Dante Alighieri");
+  s.make_ascii_uppercase();          // muta in-place, solo per ASCII
+  println!("{}", s);
+}`,
+          },
+          {
+            label: "Versione esplicita che mostra il prestito immutabile",
+            code: `fn main() {
+  let read_string = String::from("Dante Alighieri");
+  let second_string: String = String::from(read_string.as_str()).to_uppercase();
+  println!("{}\\n{}", read_string, second_string);
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+
+      {
+        id: "ch-2",
+        prompt:
+          "Perché questo programma è compilato? Perché con un riferimento mutabile posso comunque leggere il dato (in uno dei rami)?",
+        code: `use rand::Rng;
+fn main() {
+  let mut b = Box::new(84);
+  let r = &mut b;
+  *r = Box::new(100);
+  let mut rng = rand::rng();
+  let n = rng.random_range(0..10);
+  if n > 5 {
+    println!("{:?}", b);
+  } else {
+    println!("{:?}", r);
+  }
+}`,
+        solution: `Il borrow checker analizza i due percorsi di esecuzione (rami dell'if) separatamente.
+- Ramo "true": si stampa "b". In questo ramo il riferimento mutabile "r" non viene usato; il suo prestito è considerato concluso prima del punto d'uso di "b". Pertanto l'accesso al proprietario è lecito.
+- Ramo "false": si stampa "r" (il riferimento mutabile). In questo ramo, dopo la creazione di "r" e l'assegnazione "*r = ...", non ci sono accessi diretti a "b" prima del println!; quindi l'uso esclusivo di "r" è lecito.
+Poiché in ogni ramo attivo si rispetta l'esclusività del prestito mutabile, il programma è ben tipato e compila.`,
+        fixes: [
+          {
+            label: "Rendere esplicita la fine del prestito prima di usare b",
+            code: `use rand::Rng;
+fn main() {
+  let mut b = Box::new(84);
+  let r = &mut b;
+  *r = Box::new(100);
+  let mut rng = rand::rng();
+  let n = rng.random_range(0..10);
+  if n > 5 {
+    drop(r);                 // fine esplicita del prestito mutabile
+    println!("{:?}", b);
+  } else {
+    println!("{:?}", r);
+  }
+}`,
+          },
+          {
+            label: "Limitare la vita del riferimento con un blocco",
+            code: `use rand::Rng;
+fn main() {
+  let mut b = Box::new(84);
+  {
+    let r = &mut b;
+    *r = Box::new(100);
+    let mut rng = rand::rng();
+    let n = rng.random_range(0..10);
+    if n <= 5 {
+      println!("{:?}", r);   // uso dentro al blocco
+    }
+  } // rilasciato qui
+  println!("{:?}", b);       // ora accesso a b è sempre lecito
+}`,
+          },
+          {
+            label: "Evitare aliasing passando la proprietà temporaneamente",
+            code: `use rand::Rng;
+fn main() {
+  let mut b = Box::new(84);
+  // sposta e ri-ottieni per ridurre la finestra del prestito
+  let mut tmp = b;
+  tmp = Box::new(100);
+  b = tmp;
+  let mut rng = rand::rng();
+  let n = rng.random_range(0..10);
+  if n > 5 { println!("{:?}", b); } else { println!("{:?}", &b); }
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+
+      {
+        id: "ch-3",
+        prompt:
+          "Perché questo programma è compilato? Perché si può accedere al Box nonostante ci sia un prestito?",
+        code: `fn main() {
+  let mut x = Box::new(150);
+  let mut z = &x;
+  for i in 0..10 {
+    println!("{:?}", z);
+    x = Box::new(i);
+    z = &x;
+  }
+  println!("{:?}", z);
+}`,
+        solution: `Il riferimento "z" prende in prestito "x" alla riga di inizializzazione e, ad ogni iterazione, viene usato nel println! prima di qualsiasi mutazione. 
+Quel println! segna la fine effettiva del tempo di vita del prestito corrente (ultimo uso). Subito dopo, la riassegnazione di "x" è lecita perché non esistono più usi pendenti di "z" in quell'iterazione.
+Poi si crea un nuovo prestito con "z = &x" che vale fino al println! della prossima iterazione (se esiste). In altre parole: 
+- riga 1–3: creazione di "x" e primo prestito "z = &x"; 
+- riga 6: ultimo uso del prestito corrente → il prestito termina;
+- riga 7: mutazione del proprietario "x" consentita;
+- riga 8: nuovo prestito "z = &x".
+Questo ciclo si ripete per ogni iterazione, mantenendo l'ordine “usa il prestito → termina → muta → crea nuovo prestito”, perciò il programma è valido.`,
+        fixes: [
+          {
+            label: "Rendere espliciti i confini del prestito con un blocco",
+            code: `fn main() {
+  let mut x = Box::new(150);
+  let mut z = &x;
+  for i in 0..10 {
+    {
+      println!("{:?}", z); // uso e fine prestito in questo blocco
+    }
+    x = Box::new(i);       // ora si può mutare
+    z = &x;                // nuovo prestito
+  }
+  println!("{:?}", z);
+}`,
+          },
+          {
+            label: "Prestare solo quando serve (minimizzare la durata)",
+            code: `fn main() {
+  let mut x = Box::new(150);
+  for i in 0..10 {
+    { let z = &x; println!("{:?}", z); } // prestito breve
+    x = Box::new(i);
+  }
+  let z = &x;
+  println!("{:?}", z);
+}`,
+          },
+          {
+            label:
+              "Usare stampa diretta quando non serve un binding persistente",
+            code: `fn main() {
+  let mut x = Box::new(150);
+  for i in 0..10 {
+    println!("{:?}", &x); // prestito creato e usato sul momento
+    x = Box::new(i);
+  }
+  println!("{:?}", &x);
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+    ],
+    totalCards: 3,
     completedCards: 0,
     reviewCards: 0,
   },
@@ -1440,6 +1625,577 @@ consume_once(); // FnOnce
     reviewCards: 0,
   },
   {
+    id: "review-3",
+    title: "Ripasso #3",
+    description: "Sfide di verifica sul lifetime (con soluzioni spiegate).",
+    icon: "🧩",
+    challenges: [
+      {
+        id: "ch-1",
+        prompt: "Perché questo programma NON compila? (Vec<&str> + temporaneo)",
+        code: `fn insert<'a>(vet: &mut Vec<&'a str>, s: &'a str) {
+  vet.push(s);
+}
+fn main() {
+  let mut v = Vec::<&str>::new();
+  insert(&mut v, &"Ciao".to_string());
+  println!("{:?}", v);
+}`,
+        solution: `Il parametro passato a insert è un riferimento a una String temporanea creata con "to_string()" e immediatamente referenziata con "&".
+Quella String vive solo per la durata dell'espressione; il riferimento risultante non vive abbastanza per essere immagazzinato nel Vec<&str>.
+Il borrow checker rileva che il riferimento ha un lifetime inferiore a quello del vettore e rifiuta la compilazione (rischio di dangling reference).`,
+        fixes: [
+          {
+            label: "Memorizza possesso: usa Vec<String>",
+            code: `fn insert(vet: &mut Vec<String>, s: &str) {
+  vet.push(s.to_string());
+}
+fn main() {
+  let mut v = Vec::<String>::new();
+  insert(&mut v, "Ciao");
+  println!("{:?}", v);
+}`,
+          },
+          {
+            label: "Mantieni viva la String (attenzione al lifetime!)",
+            code: `fn insert<'a>(vet: &mut Vec<&'a str>, s: &'a str) {
+  vet.push(s);
+}
+fn main() {
+  let mut v: Vec<&str> = Vec::new();
+  let s = "Ciao".to_string();     // vive finché serve
+  insert(&mut v, &s);             // ok perché &s vive fino alla stampa
+  println!("{:?}", v);
+  // Se v dovesse vivere oltre 's', diventerebbe di nuovo illegale
+}`,
+          },
+          {
+            label: "Usa un literal &'static str",
+            code: `fn insert<'a>(vet: &mut Vec<&'a str>, s: &'a str) {
+  vet.push(s);
+}
+fn main() {
+  let mut v = Vec::<&str>::new();
+  insert(&mut v, "Ciao"); // literal: &'static str
+  println!("{:?}", v);
+}`,
+          },
+          {
+            label: "Flessibile con Cow<'a, str>: prestito o possesso",
+            code: `use std::borrow::Cow;
+fn insert<'a>(vet: &mut Vec<Cow<'a, str>>, s: &'a str) {
+  vet.push(Cow::Owned(s.to_string())); // oppure Cow::Borrowed(s)
+}
+fn main() {
+  let mut v: Vec<Cow<'_, str>> = Vec::new();
+  insert(&mut v, "Ciao");
+  println!("{:?}", v);
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+
+      {
+        id: "ch-2",
+        prompt:
+          "Perché questo programma compila senza annotazioni di lifetime? (Vec<String>)",
+        code: `fn insert(vet: &mut Vec<String>, s: &str) {
+  vet.push(s.to_string());
+}
+fn main() {
+  let mut v = Vec::<String>::new();
+  {
+    let messaggio = String::from("Ciao");
+    insert(&mut v, &messaggio);
+    println!("{:?}", v);
+  }
+  println!("{:?}", v); // funziona!
+}`,
+        solution: `Il vettore possiede elementi di tipo String, quindi non immagazzina riferimenti.
+La chiamata a "to_string()" crea una nuova String sullo heap che viene mossa nel Vec: nessun riferimento da tracciare a livello di lifetime, quindi non servono annotazioni.
+La firma di ToString chiarisce la semantica di possesso: "fn to_string(&self) -> String" (prende in prestito, restituisce possesso).`,
+        fixes: [
+          {
+            label: "Usa to_owned/into (idiomatico)",
+            code: `fn insert(vet: &mut Vec<String>, s: &str) {
+  vet.push(s.to_owned());      // equivalente a to_string per &str
+  // vet.push(s.into());       // alternativa idiomatica
+}`,
+          },
+          {
+            label: "Passa già una String e spostala",
+            code: `fn insert_move(vet: &mut Vec<String>, s: String) {
+  vet.push(s); // move
+}
+fn main() {
+  let mut v = Vec::<String>::new();
+  let messaggio = String::from("Ciao");
+  insert_move(&mut v, messaggio); // messaggio mosso
+  println!("{:?}", v);
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+      {
+        id: "ch-3",
+        prompt:
+          "Perché con move + i32 (Copy) l’esterno resta 0? (closure FnMut con cattura per copia)",
+        code: `fn main() {
+  let mut count = 0;
+  let mut increment = move || {
+    count += 1;
+    println!("Il conteggio è: {}", count);
+  };
+  increment();
+  increment();
+  println!("Hello, {}", count);
+}`,
+        solution: `Con "move", la chiusura cattura "count" per valore. Poiché i32 implementa Copy, la cattura è una copia.
+La chiusura modifica la sua copia interna (stato della closure), non la variabile esterna: per questo stampa 1, poi 2, e fuori resta 0.
+"let mut increment" è necessario perché la closure modifica il proprio ambiente catturato (FnMut).`,
+        fixes: [
+          {
+            label: "Senza move: cattura per riferimento mutabile",
+            code: `fn main() {
+  let mut count = 0;
+  let mut increment = || { // niente move
+    count += 1;            // &mut count (prestito esclusivo durante la chiamata)
+    println!("Il conteggio è: {}", count);
+  };
+  increment();
+  increment();
+  println!("Hello, {}", count); // ora stampa 2
+}`,
+          },
+          {
+            label: "Condividere stato anche con move usando Cell",
+            code: `use std::cell::Cell;
+fn main() {
+  let count = Cell::new(0);
+  let increment = move || {
+    count.set(count.get() + 1);
+    println!("Il conteggio è: {}", count.get());
+  };
+  increment(); increment();
+  println!("Hello, {}", count.get()); // 2
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+      {
+        id: "ch-4",
+        prompt:
+          "Perché questo programma NON compila con Box? Cosa cambia rispetto a i32 Copy?",
+        code: `fn main() {
+  let mut myBox = Box::new(42);
+  let mut increment = move || {
+    *myBox += 1;
+    println!("Il conteggio è: {}", *myBox);
+  };
+  increment();
+  increment();
+  println!("Hello, {}", *myBox);
+}`,
+        solution: `Con "move", la chiusura sposta "myBox" dentro di sé (Box non è Copy). L'ultimo println! prova a usare "myBox" dopo che è stato mosso nella closure: uso dopo move → errore di compilazione.
+Differenza col caso i32: i32 è Copy, quindi la chiusura lavora su una copia e l'originale esterno resta disponibile; Box non è Copy, quindi l'originale viene consumato.`,
+        fixes: [
+          {
+            label: "Cattura per riferimento mutabile (niente move)",
+            code: `fn main() {
+  let mut myBox = Box::new(42);
+  let mut increment = || {
+    *myBox += 1; // &mut myBox durante la chiamata
+    println!("Il conteggio è: {}", *myBox);
+  };
+  increment();
+  increment();
+  println!("Hello, {}", *myBox); // ora è lecito
+}`,
+          },
+          {
+            label: "Se vuoi mantenere move, non usare myBox fuori",
+            code: `fn main() {
+  let mut myBox = Box::new(42);
+  let mut increment = move || {
+    *myBox += 1;
+    println!("Il conteggio è: {}", *myBox);
+  };
+  increment();
+  increment();
+  // niente uso di myBox qui: è posseduto dalla closure
+}`,
+          },
+          {
+            label: "Condividere possesso: Rc<RefCell<i32>>",
+            code: `use std::cell::RefCell;
+use std::rc::Rc;
+fn main() {
+  let x = Rc::new(RefCell::new(42));
+  let x2 = Rc::clone(&x);
+  let mut increment = move || {
+    *x2.borrow_mut() += 1;
+    println!("Il conteggio è: {}", *x2.borrow());
+  };
+  increment(); increment();
+  println!("Hello, {}", *x.borrow());
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+      {
+        id: "ch-5",
+        prompt:
+          "Perché senza move la chiusura aggiorna count e il valore esterno riflette gli aggiornamenti?",
+        code: `fn main() {
+  let mut count = 0;
+  let mut increment_n = |n| {
+    count += n;
+    println!("Il conteggio è: {}", count);
+  };
+  increment_n(10);
+  increment_n(5);
+  println!("Hello, {}", count);
+}`,
+        solution: `Senza "move", la chiusura cattura "count" per riferimento mutabile a ogni chiamata (FnMut).
+Durante l'esecuzione di "increment_n", esiste un prestito esclusivo su "count"; quel prestito termina alla fine della chiamata, quindi tra una chiamata e l'altra è lecito leggere "count" dall'esterno (come nell'esempio che stampa "Hello, 15").
+Se si volesse usare "count" mentre è ancora preso in prestito dalla chiusura, il compilatore lo vieterebbe.`,
+        fixes: [
+          {
+            label: "Rendere la closure Fn (senza mut) con Cell",
+            code: `use std::cell::Cell;
+fn main() {
+  let count = Cell::new(0);
+  let increment_n = |n: i32| {
+    count.set(count.get() + n);
+    println!("Il conteggio è: {}", count.get());
+  };
+  increment_n(10);
+  println!("Hello, {}", count.get());
+  increment_n(5);
+}`,
+          },
+          {
+            label: "Evitare cattura: passa &mut esplicito a una funzione",
+            code: `fn inc_n(count: &mut i32, n: i32) {
+  *count += n;
+  println!("Il conteggio è: {}", *count);
+}
+fn main() {
+  let mut count = 0;
+  inc_n(&mut count, 10);
+  println!("Hello, {}", count);
+  inc_n(&mut count, 5);
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+      {
+        id: "ch-6",
+        prompt:
+          "Perché questa closure si può chiamare due volte e stampa lo stesso risultato?",
+        code: `fn main() {
+  let data = vec![1, 2, 3, 4, 5];
+  let process_data = move || { // move può anche essere omesso
+    let sum: i32 = data.iter().sum();
+    println!("La somma dei dati è: {}", sum);
+  };
+  process_data();
+  process_data();
+}`,
+        solution: `Anche con move, la closure cattura "data" per valore ma non lo consuma: dentro usa "data.iter()", che prende un prestito immutabile (&) sul Vec e non ne muta lo stato. 
+La closure non modifica l'ambiente catturato e può quindi essere invocata più volte (è una Fn), producendo sempre la stessa somma finché il contenuto non cambia.`,
+        fixes: [
+          {
+            label: "Variante senza move (cattura per riferimento)",
+            code: `fn main() {
+  let data = vec![1, 2, 3, 4, 5];
+  let process_data = || {
+    let sum: i32 = data.iter().sum();
+    println!("La somma dei dati è: {}", sum);
+  };
+  process_data();
+  process_data();
+}`,
+          },
+          {
+            label:
+              "Attenzione: usare into_iter() la renderebbe FnOnce (consuma)",
+            code: `fn main() {
+  let data = vec![1, 2, 3, 4, 5];
+  let f = move || data.into_iter().count(); // consuma "data" → FnOnce
+  let n1 = f();
+  // let n2 = f(); // errore: la closure ha già consumato il suo ambiente
+  println!("{}", n1);
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+      {
+        id: "ch-7",
+        prompt:
+          "La closure con move muta il Vec e poi fuori si usa ancora data: compila?",
+        code: `fn main() {
+  let mut data = vec![1, 2, 3, 4, 5];
+  let mut process_data = move || {
+    data.push(6);
+    let sum: i32 = data.iter().sum();
+    println!("La somma dei dati è: {}", sum);
+  };
+  process_data();
+  data.push(7);
+}`,
+        solution: `Non compila. Con "move" la closure sposta "data" dentro di sé; dopo l'assegnazione della closure, il binding esterno "data" è stato mosso e non è più accessibile. 
+Il borrow checker segnala l'errore sull'uso esterno "data.push(7);" perché il proprietario è ormai la closure.`,
+        fixes: [
+          {
+            label: "Senza move: cattura per riferimento mutabile",
+            code: `fn main() {
+  let mut data = vec![1, 2, 3, 4, 5];
+  let mut process_data = || {
+    data.push(6);
+    let sum: i32 = data.iter().sum();
+    println!("La somma dei dati è: {}", sum);
+  };
+  process_data();    // prestito mutabile finisce qui
+  data.push(7);      // ora è di nuovo accessibile
+}`,
+          },
+          {
+            label: "Se vuoi mantenere move, non riusare data fuori",
+            code: `fn main() {
+  let mut data = vec![1, 2, 3, 4, 5];
+  let mut process_data = move || {
+    data.push(6);
+    let sum: i32 = data.iter().sum();
+    println!("La somma dei dati è: {}", sum);
+  };
+  process_data();
+  // nessun uso di "data" qui: è posseduto dalla closure
+}`,
+          },
+          {
+            label: "Condividere possesso e mutabilità con Rc<RefCell<_>>",
+            code: `use std::cell::RefCell;
+use std::rc::Rc;
+fn main() {
+  let data = Rc::new(RefCell::new(vec![1, 2, 3, 4, 5]));
+  let data2 = Rc::clone(&data);
+  let mut process_data = move || {
+    data2.borrow_mut().push(6);
+    let sum: i32 = data2.borrow().iter().sum();
+    println!("La somma dei dati è: {}", sum);
+  };
+  process_data();
+  data.borrow_mut().push(7); // accesso esterno consentito
+  println!("{:?}", data.borrow());
+}`,
+          },
+          {
+            label: "Non catturare: passa &mut esplicito a una funzione",
+            code: `fn process_data(v: &mut Vec<i32>) {
+  v.push(6);
+  let sum: i32 = v.iter().sum();
+  println!("La somma dei dati è: {}", sum);
+}
+fn main() {
+  let mut data = vec![1, 2, 3, 4, 5];
+  process_data(&mut data);
+  data.push(7);
+  println!("{:?}", data);
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+      {
+        id: "ch-8",
+        prompt:
+          "Senza move: la closure muta il Vec e poi lo si usa fuori. Compila? Che output produce?",
+        code: `fn main() {
+  let mut data = vec![1, 2, 3, 4, 5];
+  let mut process_data = || {
+    data.push(6);
+    let sum: i32 = data.iter().sum();
+    println!("La somma dei dati è: {}", sum);
+  };
+  process_data();
+  data.push(7);
+  println!("{:?}", data);
+}`,
+        solution: `Compila e stampa:
+"La somma dei dati è: 21"
+"[1, 2, 3, 4, 5, 6, 7]"
+
+Perché: senza "move", la closure prende un prestito mutabile su "data" durante la chiamata (FnMut). Alla fine della chiamata, il prestito termina, quindi "data" è di nuovo disponibile e può essere mutato dall'esterno.`,
+        fixes: [
+          {
+            label: "Chiamare più volte alternando usi esterni",
+            code: `fn main() {
+  let mut data = vec![1, 2, 3, 4, 5];
+  let mut process_data = || {
+    data.push(6);
+    let sum: i32 = data.iter().sum();
+    println!("Somma: {}", sum);
+  };
+  process_data();          // prestito termina qui
+  println!("{:?}", data);  // lecito
+  process_data();          // nuovo prestito
+  data.push(7);            // di nuovo lecito dopo la chiamata
+  println!("{:?}", data);
+}`,
+          },
+          {
+            label: "Ridurre la durata del prestito con un blocco",
+            code: `fn main() {
+  let mut data = vec![1, 2, 3, 4, 5];
+  {
+    let mut process_data = || {
+      data.push(6);
+      let sum: i32 = data.iter().sum();
+      println!("Somma: {}", sum);
+    };
+    process_data();
+  } // il borrow della closure è sicuramente terminato
+  data.push(7);
+  println!("{:?}", data);
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+      {
+        id: "ch-9",
+        prompt:
+          "Perché questa closure non può essere invocata due volte? (count consuma l'iteratore)",
+        code: `fn main() {
+  let range = 1..10;
+  let f = || range.count();
+  let n1 = f();
+  println!("{n1}");
+  let n2 = f();
+}`,
+        solution: `Il metodo "count()" è un consumatore di iteratore: richiede il possesso dell'iteratore e lo esaurisce. 
+La closure, alla prima chiamata, muove "range" fuori dal proprio ambiente (FnOnce). Alla seconda chiamata non ha più il valore da consumare → errore: la closure implementa solo FnOnce.`,
+        fixes: [
+          {
+            label: "Rigenera il range ad ogni chiamata (nessuna cattura)",
+            code: `fn main() {
+  let f = || (1..10).count();
+  let n1 = f();
+  let n2 = f(); // ok
+  println!("{} {}", n1, n2);
+}`,
+          },
+          {
+            label: "Clona il range (Range è Clone) prima di consumarlo",
+            code: `fn main() {
+  let range = 1..10;
+  let f = || range.clone().count(); // non muove l'originale
+  let n1 = f();
+  let n2 = f();
+  println!("{} {}", n1, n2);
+}`,
+          },
+          {
+            label: "Se deve restare FnOnce, chiamala una sola volta",
+            code: `fn main() {
+  let range = 1..10;
+  let f = || range.count(); // FnOnce
+  let n1 = f();
+  println!("{}", n1);
+  // niente seconda chiamata
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+      {
+        id: "ch-10",
+        prompt: "Perché my_closure implementa solo FnOnce?",
+        code: `fn main() {
+  let s = String::from("ciao");
+  // La closure prende possesso della variabile s
+  let my_closure = move || {
+    println!("Stampo la stringa: {}", s);
+    s
+  };
+  // my_closure implementa solo FnOnce
+  my_closure();
+}`,
+        solution: `La closure cattura "s" per valore (move) e la **restituisce** come valore di ritorno (l'ultima espressione non termina con ';').
+Restituire "s" la sposta fuori dall'ambiente catturato: dopo la prima invocazione, la closure ha consumato "s" e non può essere richiamata di nuovo.
+Una closure che **muove fuori** un catturato può essere chiamata al massimo una volta → implementa solo **FnOnce**.
+Versione migliorata: assegnare il valore di ritorno a una variabile esterna e usarlo lì.`,
+        fixes: [
+          {
+            label: "Miglioramento proposto: usa il valore di ritorno una volta",
+            code: `fn main() {
+  let s = String::from("ciao");
+  let my_closure = move || {
+    println!("Stampo la stringa: {}", s);
+    s
+  };
+  let t = my_closure(); // sposta 's' fuori dalla closure
+  println!("{}", t);
+}`,
+          },
+          {
+            label:
+              "Non muovere fuori: non restituire 's' → Fn richiamabile più volte",
+            code: `fn main() {
+  let s = String::from("ciao");
+  let my_closure = move || {
+    println!("Stampo la stringa: {}", s); // solo lettura per &s
+    // niente return di 's'
+  };
+  my_closure();
+  my_closure(); // ok: non ha consumato 's'
+}`,
+          },
+          {
+            label:
+              "Restituisci una copia (clone) per poter richiamare la closure",
+            code: `fn main() {
+  let s = String::from("ciao");
+  let my_closure = move || {
+    println!("Stampo la stringa: {}", s);
+    s.clone() // ritorna una nuova String, non consuma l'originale
+  };
+  let t1 = my_closure();
+  let t2 = my_closure();
+  println!("{} {}", t1, t2);
+}`,
+          },
+          {
+            label:
+              "Senza move: cattura per riferimento e restituisci una copia",
+            code: `fn main() {
+  let s = String::from("ciao");
+  let my_closure = || {
+    println!("Stampo la stringa: {}", s); // &s
+    s.clone()
+  };
+  let t1 = my_closure();
+  let t2 = my_closure();
+  println!("{} {}", t1, t2);
+  // Nota: senza 'move' puoi ancora usare 's' qui se serve.
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+    ],
+    totalCards: 10,
+    completedCards: 0,
+    reviewCards: 0,
+  },
+  {
     id: "error-handling",
     title: "Gestione degli errori",
     description: "Result, Option e pattern di gestione degli errori",
@@ -1970,6 +2726,182 @@ let top = heap.pop(); // parola più frequente`,
       },
     ],
     totalCards: 12,
+    completedCards: 0,
+    reviewCards: 0,
+  },
+  {
+    id: "review-4",
+    title: "Ripasso #4",
+    description:
+      "Sfide di verifica su iteratori e smart pointers (con soluzioni spiegate).",
+    icon: "🧩",
+    challenges: [
+      {
+        id: "ch-1",
+        prompt: "for consuma il Vec: cosa succede agli elementi dopo il break?",
+        code: `fn main() {
+  let v = vec![1,2,3,4,5,6,7,8,8,10];
+  for num in v { // equivale a: for num in v.into_iter()
+    if num % 3 == 0 { break; }
+  }
+}`,
+        solution: `Il for su Vec<T> usa into_iter(), quindi **sposta** il vettore nel ciclo e ne consuma gli elementi.
+Quando esci con break:
+- gli elementi già estratti sono stati mossi in "num" (e poi droppati se non usati);
+- l'iteratore IntoIter viene droppato e, come effetto, **droppa anche tutti gli elementi rimanenti** non ancora estratti.
+Il Vec originale "v" è stato mosso dentro il for e non è più disponibile dopo il ciclo.`,
+        fixes: [
+          {
+            label: "Visualizza il comportamento con Drop personalizzato",
+            code: `#[derive(Debug)]
+struct S(i32);
+impl Drop for S {
+  fn drop(&mut self) { println!("Dropping S({})", self.0); }
+}
+fn main() {
+  let v = vec![S(1),S(2),S(3),S(4),S(5),S(6)];
+  for num in v {
+    println!("{:?}", num);
+    if num.0 % 3 == 0 { break; } // qui vedrai i drop del resto
+  }
+}`,
+          },
+          {
+            label: "Non consumare il vettore: itera per riferimento",
+            code: `fn main() {
+  let v = vec![1,2,3,4,5,6,7,8,9,10];
+  for num in &v { // &v.iter()
+    if *num % 3 == 0 { break; }
+  }
+  println!("{:?}", v); // ancora disponibile
+}`,
+          },
+          {
+            label: "Trova l'indice e usa slice senza consumare",
+            code: `fn main() {
+  let v = vec![1,2,3,4,5,6,7,8,9,10];
+  if let Some(idx) = v.iter().position(|n| n % 3 == 0) {
+    let (_scanditi, restanti) = v.split_at(idx);
+    println!("Restanti (slice): {:?}", restanti);
+  }
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+      {
+        id: "ch-2",
+        prompt:
+          "Rc<Node> e get_mut: perché ritorna None e cosa stampa il programma?",
+        code: `use std::rc::Rc;
+#[derive(Debug)]
+struct Node { value: i32, children: Vec<Rc<Node>> }
+fn main() {
+  let mut nipote1 = Rc::new(Node { value: 3, children: vec![] });
+  let nipote2 = Rc::new(Node { value: 6, children: vec![] });
+  let padre   = Rc::new(Node {
+    value: 9,
+    children: vec![Rc::clone(&nipote1), Rc::clone(&nipote2)],
+  });
+  let nonno   = Rc::new(Node {
+    value: 27,
+    children: vec![Rc::clone(&padre)],
+  });
+  match Rc::get_mut(&mut nipote1) {
+    Some(v) => v.children.push(Rc::clone(&nonno)),
+    None => println!("Non è possibile ottenere un riferimento mutabile."),
+  }
+  println!("{:#?}", nonno);
+}`,
+        solution: `Il programma compila e costruisce l'albero: "nonno" → "padre" → { "nipote1", "nipote2" }.
+"Rc::get_mut(&mut nipote1)" restituisce **None** perché richiede **unicità** (strong_count==1): ma "nipote1" è posseduto sia dalla variabile "nipote1" sia dentro "padre.children" → strong_count≥2. 
+Quindi non è possibile ottenere "&mut Node" tramite get_mut e compare il messaggio "Non è possibile ottenere un riferimento mutabile.".
+La stampa finale mostra l'albero senza il collegamento aggiuntivo, evitando anche di creare un ciclo (nonno→padre→nipote1→nonno) che con Rc puro provocherebbe una perdita di memoria.`,
+        fixes: [
+          {
+            label: "Mutare PRIMA di condividere (unicità garantita)",
+            code: `use std::rc::Rc;
+#[derive(Debug)]
+struct Node { value: i32, children: Vec<Rc<Node>> }
+fn main() {
+  let mut nipote1 = Rc::new(Node { value: 3, children: vec![] });
+  // OK: unico proprietario → get_mut funziona
+  Rc::get_mut(&mut nipote1).unwrap().children.push(Rc::new(Node{ value: 30, children: vec![] }));
+  let nipote2 = Rc::new(Node { value: 6, children: vec![] });
+  let padre   = Rc::new(Node { value: 9, children: vec![Rc::clone(&nipote1), Rc::clone(&nipote2)] });
+  let nonno   = Rc::new(Node { value: 27, children: vec![Rc::clone(&padre)] });
+  println!("{:#?}", nonno);
+}`,
+          },
+          {
+            label: "Consentire mutabilità condivisa con Rc<RefCell<Node>>",
+            code: `use std::{rc::Rc, cell::RefCell};
+#[derive(Debug)]
+struct Node { value: i32, children: Vec<Rc<RefCell<Node>>> }
+fn main() {
+  let nipote1 = Rc::new(RefCell::new(Node { value: 3, children: vec![] }));
+  let nipote2 = Rc::new(RefCell::new(Node { value: 6, children: vec![] }));
+  let padre   = Rc::new(RefCell::new(Node {
+    value: 9, children: vec![Rc::clone(&nipote1), Rc::clone(&nipote2)]
+  }));
+  let nonno   = Rc::new(RefCell::new(Node {
+    value: 27, children: vec![Rc::clone(&padre)]
+  }));
+  // Mutazione anche se condiviso
+  nipote1.borrow_mut().children.push(Rc::clone(&nonno));
+  println!("{:#?}", nonno);
+  // Attenzione: così si crea un ciclo Rc ↔ Rc (leak). Usa Weak per rompere il ciclo.
+}`,
+          },
+          {
+            label: "Evitare cicli usando Weak nei riferimenti ‘verso l’alto’",
+            code: `use std::rc::{Rc, Weak};
+#[derive(Debug)]
+struct Node { value: i32, parent: Weak<Node>, children: Vec<Rc<Node>> }
+fn new_node(value: i32, parent: Weak<Node>) -> Rc<Node> {
+  Rc::new(Node { value, parent, children: vec![] })
+}
+fn main() {
+  let nonno = new_node(27, Weak::new());
+  let padre = new_node(9, Rc::downgrade(&nonno));
+  // collega
+  let nipote1 = new_node(3, Rc::downgrade(&padre));
+  let nipote2 = new_node(6, Rc::downgrade(&padre));
+  // aggiorna children (serve RefCell se vuoi mutare dopo la creazione)
+  // questo esempio mostra solo la struttura dei tipi per rompere i cicli.
+  let _ = (nonno, padre, nipote1, nipote2);
+}`,
+          },
+          {
+            label:
+              "Clona-on-write con Rc::make_mut (attenzione: rompe la condivisione)",
+            code: `use std::rc::Rc;
+#[derive(Debug, Clone)]
+struct Node { value: i32, children: Vec<Rc<Node>> }
+fn main() {
+  let mut nipote1 = Rc::new(Node { value: 3, children: vec![] });
+  let padre = Rc::new(Node { value: 9, children: vec![Rc::clone(&nipote1)] });
+  // Non unico → make_mut clona il contenuto e rende unica la nuova istanza
+  Rc::make_mut(&mut nipote1).children.push(Rc::clone(&padre));
+  // Ora 'nipote1' non è più condiviso con 'padre.children[0]'
+  println!("{:?}", nipote1.children.len());
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+    ],
+    totalCards: 2,
+    completedCards: 0,
+    reviewCards: 0,
+  },
+  {
+    id: "error-handling",
+    title: "Gestione degli errori",
+    description: "Result, Option e pattern di gestione degli errori",
+    icon: "⚠️",
+    flashcards: createSampleFlashcards("Gestione degli errori", 10),
+    totalCards: 10,
     completedCards: 0,
     reviewCards: 0,
   },
