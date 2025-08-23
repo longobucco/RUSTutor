@@ -3,6 +3,7 @@ import {
   Chapter,
   LearningProgress,
   FlashcardStatus,
+  ChallengeStatus,
 } from "@/types/rust-learning";
 import { rustChapters, RUST_CHAPTERS_VERSION } from "@/data/rust-chapters";
 
@@ -70,6 +71,38 @@ export const useLearningProgress = () => {
     );
   };
 
+  const updateChallengeStatus = (
+    chapterId: string,
+    challengeId: string,
+    status: ChallengeStatus
+  ) => {
+    setChapters((prevChapters) =>
+      prevChapters.map((chapter) => {
+        if (chapter.id === chapterId && chapter.challenges) {
+          const updatedChallenges = chapter.challenges.map((challenge) =>
+            challenge.id === challengeId ? { ...challenge, status } : challenge
+          );
+
+          // Recalculate progress for this chapter
+          const completedCards = updatedChallenges.filter(
+            (c) => c.status === "completed"
+          ).length;
+          const reviewCards = updatedChallenges.filter(
+            (c) => c.status === "review"
+          ).length;
+
+          return {
+            ...chapter,
+            challenges: updatedChallenges,
+            completedCards,
+            reviewCards,
+          };
+        }
+        return chapter;
+      })
+    );
+  };
+
   const calculateProgress = (): LearningProgress => {
     const totalChapters = chapters.length;
     const completedChapters = chapters.filter(
@@ -108,9 +141,13 @@ export const useLearningProgress = () => {
   const resetProgress = () => {
     const resetChapters = rustChapters.map((chapter) => ({
       ...chapter,
-      flashcards: chapter.flashcards.map((flashcard) => ({
+      flashcards: chapter.flashcards?.map((flashcard) => ({
         ...flashcard,
         status: "not-started" as FlashcardStatus,
+      })),
+      challenges: chapter.challenges?.map((challenge) => ({
+        ...challenge,
+        status: "not-started" as ChallengeStatus,
       })),
       completedCards: 0,
       reviewCards: 0,
@@ -121,6 +158,7 @@ export const useLearningProgress = () => {
   return {
     chapters,
     updateFlashcardStatus,
+    updateChallengeStatus,
     calculateProgress,
     getChapterProgress,
     resetProgress,
