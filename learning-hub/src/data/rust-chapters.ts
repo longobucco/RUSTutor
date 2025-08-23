@@ -1036,7 +1036,7 @@ impl Deref for Selector { type Target=String; fn deref(&self)->&Self::Target{ &s
 #[derive(Debug)] struct Libro{ titolo:String, autore:String, anno:u32 }
 impl fmt::Display for Libro{
   fn fmt(&self,f:&mut fmt::Formatter<'_>)->fmt::Result{
-    write!(f, "Libro: \"{}\" di {} ({})", self.titolo, self.autore, self.anno)
+    write!(f, "Libro: "{}" di {} ({})", self.titolo, self.autore, self.anno)
   }
 }`,
         status: "not-started",
@@ -1075,7 +1075,7 @@ fn do_something()->Result<(),Box<dyn Error>>{ Err(Box::new(Custom{msg:"boom".int
         status: "not-started",
       },
     ],
-    totalCards: 9,
+    totalCards: 16,
     completedCards: 0,
     reviewCards: 0,
   },
@@ -1653,14 +1653,197 @@ for s in v { // v è consumato
     title: "Collezioni",
     description: "Vec, HashMap, HashSet e altre strutture dati",
     icon: "📚",
-    flashcards: createSampleFlashcards("Collezioni", 9),
-    totalCards: 9,
+    flashcards: [
+      {
+        id: "col-1",
+        rule: "Panoramica collezioni + scelte in base alla complessità",
+        explanation:
+          "Rust offre strutture standard per casi d’uso comuni: Vec (array dinamico), VecDeque (coda doppia), LinkedList (lista doppia), BinaryHeap (coda a priorità), HashMap/BTreeMap (mappe hash/ordinate), HashSet/BTreeSet (insiemi). La scelta dipende da pattern d’accesso e complessità: O(1) medio per HashMap/HashSet, O(log n) per BTree*, O(1) push/pop in coda/fondo con VecDeque, ecc.",
+        codeExample: `// Accessi casuali veloci: Vec
+// Molte rimozioni/aggiunte a estremi: VecDeque
+// Chiavi senza ordine: HashMap/HashSet
+// Range e ordinamento per chiave: BTreeMap/BTreeSet
+// Priorità massima al top: BinaryHeap`,
+        status: "not-started",
+      },
+      {
+        id: "col-2",
+        rule: "Metodi comuni + IntoIterator/FromIterator",
+        explanation:
+          "Tutte le collezioni espongono new/len/clear/is_empty/iter/extend. Inoltre implementano IntoIterator (consumo in iteratore) e FromIterator (collect da iteratore). Questi trait consentono pipeline fluide tra iteratori e contenitori, senza copie inutili.",
+        codeExample: `let mut v = Vec::<i32>::new();
+v.extend([1,2,3]);
+assert_eq!(v.len(), 3);
+let sum: i32 = v.iter().copied().sum(); // Iteratore -> somma
+let again: Vec<_> = (0..3).collect();   // FromIterator`,
+        status: "not-started",
+      },
+      {
+        id: "col-3",
+        rule: "Vec: layout (ptr,len,cap) e riallocazioni su push",
+        explanation:
+          "Vec è (ptr,len,cap) con buffer su heap. push inserisce in fondo; se cap è piena, rialloca un buffer più grande, copia i dati e dealloca il precedente. Indicizzazione panica fuori range; get/get_mut restituiscono Option.",
+        codeExample: `let mut v = Vec::with_capacity(2);
+v.push(10); v.push(20);
+let cap1 = v.capacity();
+v.push(30); // può riallocare
+let cap2 = v.capacity();
+assert!(cap2 >= cap1);
+assert_eq!(v.get(99), None); // sicuro: Option`,
+        status: "not-started",
+      },
+      {
+        id: "col-4",
+        rule: "Vec: API pratiche (push/pop/insert/remove/first/last/retain/extend)",
+        explanation:
+          "Operazioni tipiche: push/pop in coda, insert/remove a indice, first/last (immut./mut.), get(range)/get_mut(range) per slice sicure, retain per filtrare in place, extend per concatenare.",
+        codeExample: `let mut v = vec![1,2,3,4];
+v.insert(2, 99);        // [1,2,99,3,4]
+let x = v.remove(1);     // x=2, v=[1,99,3,4]
+*v.first_mut().unwrap() *= 10;  // [10,99,3,4]
+v.retain(|&n| n%3==0);  // [99,3] (99%3==0? no -> dipende; esempio)
+v.extend([7,8]);
+let s = v.get(..2);     // Option<&[T]>`,
+        status: "not-started",
+      },
+      {
+        id: "col-5",
+        rule: "VecDeque: coda a doppia entrata (buffer circolare)",
+        explanation:
+          "VecDeque consente push_front/push_back e pop_front/pop_back in O(1). Non garantisce contiguità fisica; make_contiguous compattizza. È preferibile a Vec quando servono operazioni frequenti in testa.",
+        codeExample: `use std::collections::VecDeque;
+let mut d = VecDeque::new();
+d.push_back(1); d.push_front(0);
+assert_eq!(d.pop_front(), Some(0));
+let slice: &mut [i32] = d.make_contiguous(); // ora contiguo`,
+        status: "not-started",
+      },
+      {
+        id: "col-6",
+        rule: "BinaryHeap (max-heap): proprietà, peek/peek_mut e sorted drain",
+        explanation:
+          "BinaryHeap mantiene il massimo in cima, implementato su Vec con relazioni di indice padre/figli. push fa ‘heapify-up’; pop fa ‘heapify-down’. peek è O(1); peek_mut consente modifica del massimo; into_sorted_vec consuma la heap restituendo un Vec ordinato.",
+        codeExample: `use std::collections::BinaryHeap;
+let mut h = BinaryHeap::from([4,1,7,3,6]);
+assert_eq!(h.peek(), Some(&7));
+if let Some(mut top) = h.peek_mut() { *top /= 7; } // ridimensiona il massimo
+let sorted = h.into_sorted_vec(); // crescente`,
+        status: "not-started",
+      },
+      {
+        id: "col-7",
+        rule: "LinkedList: pro/contro e quando evitarla",
+        explanation:
+          "LinkedList ha inserimenti/rimozioni efficienti a estremi ma accesso casuale pessimo, overhead di puntatori e scarso locality di cache. In pratica si preferiscono Vec/VecDeque. Utile quando servono spostamenti O(1) di nodi tra liste.",
+        codeExample: `use std::collections::LinkedList;
+let mut l = LinkedList::new();
+l.push_front("a".to_string());
+l.push_back("b".to_string());
+// split_off + append
+let mut tail = l.split_off(1);
+l.append(&mut tail); // concatena in O(1) sui puntatori`,
+        status: "not-started",
+      },
+      {
+        id: "col-8",
+        rule: "HashMap: Eq+Hash, riallocazioni e API (keys/values/iter/iter_mut)",
+        explanation:
+          "HashMap archivia coppie K→V con hashing; K deve implementare Eq e Hash. Inserimenti possono causare riallocazioni della tabella. keys/values/iter/iter_mut forniscono viste e mutazioni controllate.",
+        codeExample: `use std::collections::HashMap;
+let mut m = HashMap::<&str,i32>::new();
+m.insert("Alice", 100);
+m.entry("Bob").or_insert(90);
+for (k,v) in m.iter_mut() { *v += 1; }
+assert!(m.contains_key("Alice"));`,
+        status: "not-started",
+      },
+      {
+        id: "col-9",
+        rule: "HashMap: entry API (and_modify/or_insert/or_insert_with) e sicurezza",
+        explanation:
+          "entry evita doppie ricerche: Occupied consente and_modify; Vacant consente or_insert/or_insert_with. L’uso di operator[] panica se la chiave manca: preferisci get/entry per accessi sicuri.",
+        codeExample: `use std::collections::hash_map::Entry;
+let mut m = std::collections::HashMap::new();
+for name in ["A","B","B","C","A"] {
+  m.entry(name).and_modify(|c| *c+=1).or_insert(1);
+}
+assert_eq!(m.get("B"), Some(&2));`,
+        status: "not-started",
+      },
+      {
+        id: "col-10",
+        rule: "BTreeMap: ordine per chiave, range/range_mut, entry ‘manuale’",
+        explanation:
+          "BTreeMap mantiene le coppie ordinate per chiave (ricerche, range e visita in-order in O(log n)). Supporta range/range_mut per intervalli. L’entry esiste ma senza scorciatoie and_modify/or_insert*: si lavora con get_mut/insert o con match su Entry.",
+        codeExample: `use std::collections::{BTreeMap, btree_map::Entry};
+let mut t = BTreeMap::new();
+t.insert(2, "due"); t.insert(5, "cinque");
+for (k,v) in t.range(2..=9) { let _ = (k,v); }
+match t.entry(5) {
+  Entry::Occupied(mut e) => { *e.get_mut() = "5"; }
+  Entry::Vacant(e) => { e.insert("5"); }
+}`,
+        status: "not-started",
+      },
+      {
+        id: "col-11",
+        rule: "HashSet: insieme non ordinato, operazioni insiemistiche",
+        explanation:
+          "HashSet è un wrapper su HashMap<K,()> e conserva unicità senza ordine. Offre union/intersection/difference/symmetric_difference, oltre a contains/get/take per membership e rimozione sicura.",
+        codeExample: `use std::collections::HashSet;
+let a: HashSet<_> = [1,2,3,4,5].into_iter().collect();
+let b: HashSet<_> = [3,4,5,6,7].into_iter().collect();
+let u: HashSet<_> = a.union(&b).cloned().collect();
+let i: HashSet<_> = a.intersection(&b).cloned().collect();`,
+        status: "not-started",
+      },
+      {
+        id: "col-12",
+        rule: "BTreeSet: insieme ordinato, range e relazioni (subset/superset)",
+        explanation:
+          "BTreeSet mantiene i valori ordinati, espone range e relazioni insiemistiche: is_disjoint, is_subset, is_superset. È indicato quando servono query per intervallo e ordine stabile.",
+        codeExample: `use std::collections::BTreeSet;
+let s: BTreeSet<_> = [5,10,18,20,35].into_iter().collect();
+for x in s.range(10..20) { let _ = x; }
+let a: BTreeSet<_> = [1,2,3].into_iter().collect();
+let b: BTreeSet<_> = [2,3,4].into_iter().collect();
+assert!(a.is_disjoint(&b)==false);`,
+        status: "not-started",
+      },
+      {
+        id: "col-13",
+        rule: "Pattern ‘collect/extend’: materializzare o concatenare stream",
+        explanation:
+          "collect materializza un iteratore in una collezione target; extend concatena in-place da un iteratore o un’altra collezione, evitando allocazioni temporanee superflue.",
+        codeExample: `let mut v = vec![1,2];
+v.extend(3..=5);               // [1,2,3,4,5]
+let set: std::collections::HashSet<_> = v.into_iter().collect();`,
+        status: "not-started",
+      },
+      {
+        id: "col-14",
+        rule: "Checklist di scelta rapida (difficoltà/trade-off)",
+        explanation:
+          "• Molte letture casuali e append in coda: Vec. • Molte operazioni in testa e coda: VecDeque. • Massimo/minimo rapido: BinaryHeap. • Chiavi senza ordine e lookup mediamente O(1): HashMap/HashSet. • Range, ordinamento e traversal ordinato: BTreeMap/BTreeSet. • Evita LinkedList salvo necessità di spostamenti O(1) tra liste.",
+        codeExample: `// Esempio: conteggio parole e poi top-K
+use std::collections::{HashMap, BinaryHeap};
+let text = "a a b c a b";
+let mut freq = HashMap::new();
+for w in text.split_whitespace() {
+  *freq.entry(w).or_insert(0) += 1;
+}
+let mut heap: BinaryHeap<(i32,&str)> = freq.into_iter().map(|(k,v)|(v,k)).collect();
+let top = heap.pop(); // parola più frequente`,
+        status: "not-started",
+      },
+    ],
+    totalCards: 14,
     completedCards: 0,
     reviewCards: 0,
   },
   {
     id: "io",
-    title: "Input / Output",
+    title: "Input / Output [DA FARE]",
     description: "File I/O, networking e gestione dei flussi di dati",
     icon: "💾",
     flashcards: createSampleFlashcards("Input / Output", 8),
@@ -1792,7 +1975,7 @@ for s in v { // v è consumato
   },
   {
     id: "modules",
-    title: "Moduli",
+    title: "Moduli [DA FARE]",
     description: "Organizzazione del codice, crate e sistema di moduli",
     icon: "📂",
     flashcards: createSampleFlashcards("Moduli", 7),
@@ -1802,7 +1985,7 @@ for s in v { // v è consumato
   },
   {
     id: "testing",
-    title: "Test",
+    title: "Test [DA FARE]",
     description: "Unit test, integration test e testing patterns",
     icon: "🧪",
     flashcards: createSampleFlashcards("Test", 6),
@@ -1812,7 +1995,7 @@ for s in v { // v è consumato
   },
   {
     id: "channels",
-    title: "Canali",
+    title: "Canali [DA FARE]",
     description: "Comunicazione tra thread con canali e message passing",
     icon: "📡",
     flashcards: createSampleFlashcards("Canali", 8),
@@ -2061,8 +2244,154 @@ fn main() { barrier_demo(); let v = LOGGER.get_or_init(|| "init una volta"); pri
     title: "Processi",
     description: "Gestione di processi esterni e system programming",
     icon: "⚙️",
-    flashcards: createSampleFlashcards("Processi", 7),
-    totalCards: 7,
+    flashcards: [
+      {
+        id: "pr-1",
+        rule: "Che cos’è un processo: PID, spazio di indirizzamento, thread e isolamento",
+        explanation:
+          "Un processo è l’unità base di esecuzione (identificata da PID) con uno spazio di indirizzamento separato in cui operano uno o più thread. Lo spazio fornisce isolamento ‘parziale’: i processi possono comunque interferire via filesystem, autenticazione/autorizzazioni, rete o periferiche condivise; per cooperare in modo controllato si usano meccanismi IPC.",
+        codeExample: `// Concetti: PID, address space, thread primario, isolamento parziale, IPC`,
+        status: "not-started",
+      },
+      {
+        id: "pr-2",
+        rule: "Perché più processi: riuso, scalabilità, sicurezza (vs singolo address space dei thread)",
+        explanation:
+          "I thread semplificano la cooperazione in uno spazio condiviso, ma quando riusi programmi esistenti, scali su più macchine o vuoi isolamento forte, conviene decomporre in processi collegati (concorrenti per natura) e coordinati con IPC.",
+        codeExample: `// Architettura multi-processo: servizio A ↔ servizio B tramite pipe/socket/shared memory`,
+        status: "not-started",
+      },
+      {
+        id: "pr-3",
+        rule: "Windows: CreateProcess e ciclo di vita del figlio",
+        explanation:
+          "`CreateProcess` crea un nuovo address space ‘pulito’, carica l’immagine dell’eseguibile, crea/avvia il thread primario (tramite startup CRT che poi invoca main). Il figlio può ereditare env e alcuni handle (file, semafori, pipe), non thread/process handle, DLL o regioni di memoria.",
+        codeExample: `// Schema: CreateProcess(cmdline) → STARTUPINFO/PROCESS_INFORMATION → WaitForSingleObject → CloseHandle`,
+        status: "not-started",
+      },
+      {
+        id: "pr-4",
+        rule: "Linux: fork() e Copy-On-Write; ritorna due volte",
+        explanation:
+          "`fork()` duplica lo spazio del padre (stack, heap, globali) con COW: le pagine si copiano solo alla prima scrittura. Ritorna 2 volte: al padre restituisce il PID del figlio; al figlio restituisce 0. Per ottenere PID e PPID si usano `getpid()`/`getppid()`.",
+        codeExample: `// padre: pid=fork(); if (pid>0) { /* padre */ } else if (pid==0) { /* figlio */ } else { /* errore */ }`,
+        status: "not-started",
+      },
+      {
+        id: "pr-5",
+        rule: "exec*(): sostituire l’immagine del processo (fork–exec)",
+        explanation:
+          "La famiglia `exec*` rimpiazza completamente l’immagine del processo corrente con un nuovo eseguibile (parametri gestiti in modi diversi a seconda della variante). Pattern tipico: `fork()` nel padre, `exec*()` nel figlio per avviare il programma target.",
+        codeExample: `// figlio:
+execl("./prog", "./prog", (const char*)0); // se fallisce, torna con -1 e errno`,
+        status: "not-started",
+      },
+      {
+        id: "pr-6",
+        rule: "Fork e thread: perché serve pthread_atfork",
+        explanation:
+          "Dopo `fork()` il figlio ha un solo thread: oggetti di sincronizzazione possono restare in stati incoerenti (es. mutex detenuto da un thread inesistente → deadlock). `pthread_atfork(prepare,parent,child)` permette di acquisire i mutex in `prepare`, rilasciarli nel padre e reimpostare/rilasciare nel figlio.",
+        codeExample: `pthread_atfork(lock_all_mutexes, unlock_in_parent, unlock_and_reset_in_child);`,
+        status: "not-started",
+      },
+      {
+        id: "pr-7",
+        rule: "Terminare un processo: _exit/ExitProcess vs exit/atexit",
+        explanation:
+          "`_exit(int)` (Linux) ed `ExitProcess(int)` (Windows) terminano immediatamente TUTTI i thread, chiudono handle e rilasciano memoria; non chiamano distruttori/cleanup del runtime. `exit(int)`/`std::exit(int)` invece eseguono le callback registrate con `atexit` e la pulizia del CRT prima di uscire.",
+        codeExample: `// Registrazione cleanup portabile
+int ok1=std::atexit(cb1); int ok2=std::atexit(cb2); /* ... */ std::exit(0);`,
+        status: "not-started",
+      },
+      {
+        id: "pr-8",
+        rule: "Return code e terminazione per eccezione/panic",
+        explanation:
+          "Per convenzione, 0 = successo, ≠0 = errore (semantica definita dall’app). In Unix solo 8 bit arrivano al SO. Eccezioni non gestite o panic nel thread principale portano alla terminazione del processo con un codice specifico (es. 101 in molti binari Rust in caso di panic).",
+        codeExample: `// main → ritorna → startup code invoca exit(status)
+// panic nel main → termina il processo con codice definito dal runtime`,
+        status: "not-started",
+      },
+      {
+        id: "pr-9",
+        rule: "Rust: std::process::Command (builder pattern) e Output/ExitStatus",
+        explanation:
+          "`Command::new(...).args(...).output()` lancia il figlio e attende il termine restituendo `Result<Output>`, che include `status` (ExitStatus), `stdout` e `stderr`. `ExitStatus` espone info sul codice e, su Unix, sulla causa (segnale, core dump, sospensione/continuazione).",
+        codeExample: `use std::process::Command;
+let out = Command::new("sh").arg("-c").arg("echo hello").output().unwrap();
+// out.status.success(), String::from_utf8_lossy(&out.stdout)`,
+        status: "not-started",
+      },
+      {
+        id: "pr-10",
+        rule: "Ambiente e I/O: env/envs/env_remove/env_clear, stdin/stdout/stderr",
+        explanation:
+          "Di default il figlio eredita le variabili d’ambiente del padre. Puoi aggiungere/modificare (`env`, `envs`), rimuovere (`env_remove`) o azzerare tutto (`env_clear`). Per i flussi standard: `inherit()` (condivide), `piped()` (crea pipe), `null()` (scarta). I default cambiano: `output()` usa pipe; `status()`/`spawn()` ereditano.",
+        codeExample: `use std::process::{Command,Stdio};
+let out = Command::new("echo").arg("hi").stdout(Stdio::piped()).env("K","V").output().unwrap();`,
+        status: "not-started",
+      },
+      {
+        id: "pr-11",
+        rule: "Current dir, status(), spawn(): tre modalità e differenze",
+        explanation:
+          "`current_dir(path)` modifica la working directory del figlio. `status()` avvia e attende restituendo `ExitStatus`; `output()` cattura stdout/stderr; `spawn()` restituisce `Child` e NON attende. Di default, `status/spawn` → inherit; `output` → piped.",
+        codeExample: `use std::process::{Command,Stdio};
+let st = Command::new("ls").current_dir("/bin").status().unwrap();
+let child = Command::new("sleep").arg("5").stdout(Stdio::piped()).spawn().unwrap();`,
+        status: "not-started",
+      },
+      {
+        id: "pr-12",
+        rule: "Child: id(), wait(), wait_with_output(), kill() e piping manuale",
+        explanation:
+          "`Child` permette controllo fine: `id()` per il PID, `wait()` per attendere, `wait_with_output()` per chiudere stdin e raccogliere output residuo, `kill()` per terminare. Con `Stdio::piped()` puoi scrivere su `stdin` del figlio e leggere `stdout`.",
+        codeExample: `use std::io::Write; use std::process::{Command,Stdio};
+let mut p = Command::new("rev").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+p.stdin.as_mut().unwrap().write_all("abc".as_bytes()).unwrap();
+let out = p.wait_with_output().unwrap(); // -> cba`,
+        status: "not-started",
+      },
+      {
+        id: "pr-13",
+        rule: "Interazione fork–stdio: buffering duplicato e flush preventivo",
+        explanation:
+          "Dopo `fork()`, i buffer di I/O sono duplicati; se padre e figlio fanno flush, lo stesso contenuto può essere scritto due volte (più probabile se l’output è rediretto a file con buffering a blocchi). Prima di `fork()` conviene forzare `flush()` su stream e file aperti.",
+        codeExample: `// Strategia: fflush(stdout); fflush(stderr); // o cout/cerre flush esplicito prima di fork()`,
+        status: "not-started",
+      },
+      {
+        id: "pr-14",
+        rule: "std::process::exit/abort/panic in Rust: differenze operative",
+        explanation:
+          "`std::process::exit(code)` termina subito senza invocare i distruttori sullo stack (nessun unwinding). `abort()` termina anomalo con codice ‘forzato’. `panic!` fa unwinding dello stack del thread corrente; nel main può terminare il processo, ma esegue i distruttori nello stack del thread.",
+        codeExample: `// Esempi separati:
+// process::exit(1);
+// process::abort();
+// panic!("errore");`,
+        status: "not-started",
+      },
+      {
+        id: "pr-15",
+        rule: "Attendere processi esterni: wait/waitpid/waitid e codifica dello stato",
+        explanation:
+          "Su Unix: `wait()` blocca finché un figlio termina (restituisce il suo PID e compone lo stato a 16 bit); `waitpid(pid, &status, options)` consente targeting e polling non bloccante. I bit distinguono exit code, segnale di terminazione, e flag di core dump.",
+        codeExample: `// Interpretazione di status:
+// exit_status (0–255) vs terminazione per segnale (e.g., SIGKILL, SIGABRT), core_dumped flag`,
+        status: "not-started",
+      },
+      {
+        id: "pr-16",
+        rule: "Orfani e zombie; evitare zombie con wait",
+        explanation:
+          "Se il padre muore, il figlio diventa orfano ed è adottato da PID 1 (init). Se il figlio termina e il padre non chiama `wait*`, resta uno zombie (solo ID e stato conservati finché il padre non raccoglie). Per evitare zombie, assicurati di invocare `wait()`/`waitpid()` per ogni figlio.",
+        codeExample: `// Pattern:
+// let mut child = Command::new("sleep").arg("1").spawn().unwrap();
+// child.wait().unwrap(); // raccoglie lo stato, niente zombie`,
+        status: "not-started",
+      },
+    ],
+    totalCards: 16,
     completedCards: 0,
     reviewCards: 0,
   },
@@ -2071,14 +2400,245 @@ fn main() { barrier_demo(); let v = LOGGER.get_or_init(|| "init una volta"); pri
     title: "Programmazione asincrona",
     description: "Async/await, Future trait e runtime asincroni",
     icon: "🚀",
-    flashcards: createSampleFlashcards("Programmazione asincrona", 12),
-    totalCards: 12,
+    flashcards: [
+      {
+        id: "as-1",
+        rule: "Concorrente vs Asincrono: I/O-bound vs CPU-bound",
+        explanation:
+          "Usa i thread quando devi ELABORARE in parallelo (CPU-bound); usa l’asincrono quando devi ATTENDERE in parallelo (I/O-bound). L’asincrono separa la richiesta dall’azione da compiere quando arriva la risposta, evitando di bloccare il thread se c’è altro da fare.",
+        codeExample: `// Concorrente (thread): più CPU eseguono lavoro pesante in parallelo
+// Asincrono (async): mentre un I/O attende, il runtime esegue altro lavoro`,
+        status: "not-started",
+      },
+      {
+        id: "as-2",
+        rule: "Costi: task async vs thread nativi",
+        explanation:
+          "Creazione/cambio contesto/memoria: i task async hanno ordini di grandezza inferiori rispetto ai thread (poche centinaia di ns e centinaia di byte vs più µs e KB). Quindi sono adatti a molte attese concorrenti senza saturare risorse.",
+        codeExample: `// Regola pratica: per migliaia di 'attese' parallele preferisci async a thread.`,
+        status: "not-started",
+      },
+      {
+        id: "as-3",
+        rule: "Callback e 'inferno' di nidificazioni",
+        explanation:
+          "API a callback eliminano il blocco ma complicano flussi composti/ciclici e gestione errori: si finisce a scrivere una macchina a stati manuale con callback annidate (callback hell).",
+        codeExample: `// Pseudocodice (non idiomatico Rust):
+// read_async(f1, |res1| { if ok { write_async(f2, buf, |res2| { if ok { /*...*/ } }) } })`,
+        status: "not-started",
+      },
+      {
+        id: "as-4",
+        rule: "Futures come esecuzione parziale + chaining",
+        explanation:
+          "Riorganizza le callback in una pipeline lineare: ogni step restituisce un Future; gli step successivi si collegano con combinatori/await. La computazione avanza 'a strappi' quando i Future diventano pronti.",
+        codeExample: `async fn copy(mut r: Reader, mut w: Writer) -> std::io::Result<()> {
+  let mut buf = Vec::new();
+  r.read_async(&mut buf).await?;   // attesa non bloccante
+  w.write_async(&buf).await?;      // step successivo
+  Ok(())
+}`,
+        status: "not-started",
+      },
+      {
+        id: "as-5",
+        rule: "Che cos’è async/await: desugar in Future",
+        explanation:
+          "`async fn` viene desugared in una funzione che restituisce `impl Future<Output=T>`. Ogni `.await` introduce uno stato intermedio della macchina a stati generata dal compilatore.",
+        codeExample: `async fn f() -> u32 { 1 }
+fn g() -> impl core::future::Future<Output = u32> { async { 1 } } // equivalenti nel tipo di ritorno`,
+        status: "not-started",
+      },
+      {
+        id: "as-6",
+        rule: "Trait Future: poll, Pin, Context e Waker",
+        explanation:
+          "`Future` espone `poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<T>`. `Pin` impedisce di muovere la struttura (necessario per stati autoreferenziali); `Context` incapsula un `Waker` per notificare quando riprovare il `poll`. `Poll::Pending` sospende, `Poll::Ready(val)` completa.",
+        codeExample: `use core::future::Future;
+use core::pin::Pin; use core::task::{Context, Poll};
+struct MyFut;
+impl Future for MyFut {
+  type Output = u32;
+  fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<u32> {
+    Poll::Ready(42)
+  }
+}`,
+        status: "not-started",
+      },
+      {
+        id: "as-7",
+        rule: "Macchina a stati generata dal compilatore",
+        explanation:
+          "Il compilatore sintetizza struct per gli stati (variabili locali salvate) e una enum che li racchiude; implementa `Future::poll` con un `match` sullo stato, passando da `Pending` a `Ready` quando i sotto-future completano.",
+        codeExample: `// Schema concettuale:
+// enum CopySm { S0{...}, S1{...}, S2{...}, Done }
+// impl Future for CopySm { fn poll(...) -> Poll<Result<()>> { /* match sugli stati */ } }`,
+        status: "not-started",
+      },
+      {
+        id: "as-8",
+        rule: "Chi fa avanzare i Future? Il ruolo dell’esecutore",
+        explanation:
+          "Un `Future` è inerte: avanza solo se qualcuno chiama `poll`. I runtime (Tokio, smol, async-std) implementano un event loop che poll-a i Future quando i Waker li segnalano pronti. Da funzioni sync devi usare un esecutore per avviare/attendere Future.",
+        codeExample: `#[tokio::main]
+async fn main() {
+  let fut = async { 123 };
+  let n = fut.await; // il runtime invoca poll sotto il cofano
+  println!("{}", n);
+}`,
+        status: "not-started",
+      },
+      {
+        id: "as-9",
+        rule: "Runtime multi-thread e requisiti Send/Sync",
+        explanation:
+          "Tokio usa un thread-pool con work-stealing: uno stesso task può riprendere su thread diversi. Tutto ciò che attraversa gli stati (catturato dalla future state machine) deve essere `Send`; riferimenti condivisi tra thread devono rispettare `Sync`.",
+        codeExample: `#[tokio::main(flavor="multi_thread")]
+async fn main() {
+  let s = std::sync::Arc::new(String::from("ciao")); // Arc<String>: Send+Sync se T: Send+Sync
+  let s2 = s.clone();
+  tokio::spawn(async move { println!("{}", s2.len()); }).await.unwrap();
+}`,
+        status: "not-started",
+      },
+      {
+        id: "as-10",
+        rule: "Tokio: spawn e JoinHandle; join!/try_join!",
+        explanation:
+          "`tokio::spawn` avvia un task concorrente e restituisce `JoinHandle<T>` da `.await`-are. `tokio::join!` attende più future in parallelo; `tokio::try_join!` si ferma al primo errore e restituisce `Result`.",
+        codeExample: `use tokio::time::{sleep, Duration};
+#[tokio::main]
+async fn main() {
+  let h = tokio::spawn(async { sleep(Duration::from_millis(10)).await; 7 });
+  let a = async { 1u32 };
+  let b = async { 2u32 };
+  let (x, y) = tokio::join!(a, b);
+  let z = h.await.unwrap();
+  println!("{} {} {}", x, y, z);
+}`,
+        status: "not-started",
+      },
+      {
+        id: "as-11",
+        rule: "select!: primo che completa, gli altri si cancellano",
+        explanation:
+          "`tokio::select!` attende su più rami asincroni ed esegue il primo che diventa pronto, cancellando gli altri. Può avere condizioni (if) e ramo `else`.",
+        codeExample: `use tokio::{select, time::{sleep, Duration}};
+#[tokio::main]
+async fn main() {
+  let a = async { sleep(Duration::from_millis(50)).await; "A" };
+  let b = async { sleep(Duration::from_millis(10)).await; "B" };
+  select! {
+    v = a => println!("{}", v),
+    v = b => println!("{}", v),
+    else => println!("niente pronto"),
+  }
+}`,
+        status: "not-started",
+      },
+      {
+        id: "as-12",
+        rule: "Tempo: sleep non blocca, timeout limita la durata",
+        explanation:
+          "`tokio::time::sleep(d)` sospende il task senza consumare CPU. `tokio::time::timeout(d, fut)` restituisce `Ok(val)` se `fut` termina in tempo altrimenti `Err(Elapsed)`.",
+        codeExample: `use tokio::time::{sleep, timeout, Duration};
+#[tokio::main]
+async fn main() {
+  let fut = async { sleep(Duration::from_secs(2)).await; 42 };
+  let res = timeout(Duration::from_secs(1), fut).await;
+  println!("{:?}", res); // Err(elapsed)
+}`,
+        status: "not-started",
+      },
+      {
+        id: "as-13",
+        rule: "CPU-bound in async: usa spawn_blocking",
+        explanation:
+          "Lavoro computazionalmente intenso introduce latenza se eseguito nel reactor. Incapsulalo in `tokio::task::spawn_blocking` (thread-pool separato per chiamate bloccanti/CPU-bound). Evita di abusarne o saturi la CPU.",
+        codeExample: `use tokio::task;
+#[tokio::main]
+async fn main() {
+  let sum = task::spawn_blocking(|| (0..20_000_000u64).sum()).await.unwrap();
+  println!("{}", sum);
+}`,
+        status: "not-started",
+      },
+      {
+        id: "as-14",
+        rule: "Stato condiviso: Arc<Mutex<T>>, Semaphore, RwLock, Barrier, Notify",
+        explanation:
+          "Con più thread nel runtime valgono le stesse regole del multithreading: usa `Arc<Mutex<T>>` per mutabilità condivisa, `Semaphore` per limitare la concorrenza, `RwLock` per molti lettori/un solo scrittore, `Barrier` per sincronizzare fasi, `Notify` per semplici notifiche.",
+        codeExample: `use std::sync::Arc;
+use tokio::sync::{Mutex, Semaphore, RwLock, Barrier, Notify};
+#[tokio::main]
+async fn main() {
+  let v = Arc::new(Mutex::new(0));
+  let sem = Arc::new(Semaphore::new(2));
+  let rw  = Arc::new(RwLock::new(0));
+  let bar = Arc::new(Barrier::new(2));
+  let nfy = Arc::new(Notify::new());
+  let v2 = v.clone(); let sem2 = sem.clone(); let rw2 = rw.clone(); let bar2 = bar.clone(); let nfy2 = nfy.clone();
+  let t1 = tokio::spawn(async move {
+    let _p = sem2.acquire().await.unwrap();
+    *v2.lock().await += 1;
+    *rw2.write().await += 1;
+    nfy2.notify_one();
+    bar2.wait().await;
+  });
+  let t2 = tokio::spawn(async move {
+    nfy.notified().await;
+    let r = *rw.read().await; let _ = r;
+    bar.wait().await;
+  });
+  let _ = tokio::join!(t1, t2);
+}`,
+        status: "not-started",
+      },
+      {
+        id: "as-15",
+        rule: "Canali: oneshot e mpsc bounded/unbounded",
+        explanation:
+          "`oneshot` trasferisce un singolo valore da un produttore a un consumatore. `mpsc` crea un canale molti-produttori/singolo-consumatore; versione bounded (buffer finito) o unbounded (coda non limitata). Chiudi i sender per far terminare il receiver.",
+        codeExample: `use tokio::sync::{oneshot, mpsc};
+#[tokio::main]
+async fn main() {
+  let (tx1, rx1) = oneshot::channel::<i32>();
+  tokio::spawn(async move { let _ = tx1.send(7); });
+  println!("oneshot = {}", rx1.await.unwrap());
+  let (tx, mut rx) = mpsc::channel::<&'static str>(2);
+  for _ in 0..3 { let t = tx.clone(); tokio::spawn(async move { let _=t.send("hi").await; }); }
+  drop(tx);
+  while let Some(msg) = rx.recv().await { let _ = msg; }
+}`,
+        status: "not-started",
+      },
+      {
+        id: "as-16",
+        rule: "Canali: broadcast e watch (pattern Observer)",
+        explanation:
+          "`broadcast` invia ogni messaggio a tutti i subscriber attivi (ogni receiver ha la sua coda). `watch` mantiene solo l’ultimo valore e notifica i cambi: i receiver leggono con `borrow()/borrow_and_update()` e attendono con `changed().await`.",
+        codeExample: `use tokio::sync::{broadcast, watch};
+#[tokio::main]
+async fn main() {
+  let (txb, _rx0) = broadcast::channel::<i32>(16);
+  let mut r1 = txb.subscribe(); let mut r2 = txb.subscribe();
+  tokio::spawn(async move { while let Ok(v)=r1.recv().await { let _=v; } });
+  tokio::spawn(async move { while let Ok(v)=r2.recv().await { let _=v; } });
+  let _ = txb.send(10);
+  let (txw, mut rw) = watch::channel(0);
+  tokio::spawn(async move { while rw.changed().await.is_ok() { let _=*rw.borrow(); } });
+  let _ = txw.send(1);
+}`,
+        status: "not-started",
+      },
+    ],
+    totalCards: 16,
     completedCards: 0,
     reviewCards: 0,
   },
   {
     id: "problem-solving",
-    title: "Problem Solving",
+    title: "Problem Solving [DA FARE]",
     description: "Pattern e tecniche per risolvere problemi complessi",
     icon: "💡",
     flashcards: createSampleFlashcards("Problem Solving", 15),
