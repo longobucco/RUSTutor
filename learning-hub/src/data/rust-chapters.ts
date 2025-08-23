@@ -397,7 +397,7 @@ fn main() {
     id: "review-1",
     title: "Ripasso #1",
     description:
-      "Sfide di verifica su borrowing, slice e mutabilità in Rust (con soluzioni spiegate).",
+      "Sfide di verifica su borrowing, slice e mutabilità (con soluzioni spiegate).",
     icon: "🧩",
     challenges: [
       {
@@ -656,6 +656,191 @@ let v2: Vec<i32> = b.into_vec(); // ritorno a Vec`,
       },
     ],
     totalCards: 12,
+    completedCards: 0,
+    reviewCards: 0,
+  },
+  {
+    id: "review-2",
+    title: "Ripasso #2",
+    description: "Sfide di verifica sul possesso (con soluzioni spiegate).",
+    icon: "🧩",
+    challenges: [
+      {
+        id: "ch-1",
+        prompt:
+          "Perché questo programma è compilato? Perché read_string non è mosso?",
+        code: `fn main() {
+  let read_string = "Dante Alighieri".to_string();
+  let second_string = read_string.to_uppercase();
+  println!("{}\\n{}", read_string, second_string);
+}`,
+        solution: `Alla riga 3 si invoca il metodo "to_uppercase" con firma: "pub fn to_uppercase(&self) -> String".
+Il ricevitore (read_string) è prestato in modo immutabile tramite "&self" (internamente come &str), quindi NON viene mosso né consumato.
+La funzione costruisce e restituisce una NUOVA "String" (second_string) che viene mossa nella variabile di destinazione.
+Di conseguenza, il valore originale (read_string) rimane valido e può essere letto successivamente alla riga 4.`,
+        fixes: [
+          {
+            label:
+              "Versione con mutazione in-place ASCII (evita allocazione extra)",
+            code: `fn main() {
+  let mut s = String::from("Dante Alighieri");
+  s.make_ascii_uppercase();          // muta in-place, solo per ASCII
+  println!("{}", s);
+}`,
+          },
+          {
+            label: "Versione esplicita che mostra il prestito immutabile",
+            code: `fn main() {
+  let read_string = String::from("Dante Alighieri");
+  let second_string: String = String::from(read_string.as_str()).to_uppercase();
+  println!("{}\\n{}", read_string, second_string);
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+
+      {
+        id: "ch-2",
+        prompt:
+          "Perché questo programma è compilato? Perché con un riferimento mutabile posso comunque leggere il dato (in uno dei rami)?",
+        code: `use rand::Rng;
+fn main() {
+  let mut b = Box::new(84);
+  let r = &mut b;
+  *r = Box::new(100);
+  let mut rng = rand::rng();
+  let n = rng.random_range(0..10);
+  if n > 5 {
+    println!("{:?}", b);
+  } else {
+    println!("{:?}", r);
+  }
+}`,
+        solution: `Il borrow checker analizza i due percorsi di esecuzione (rami dell'if) separatamente.
+- Ramo "true": si stampa "b". In questo ramo il riferimento mutabile "r" non viene usato; il suo prestito è considerato concluso prima del punto d'uso di "b". Pertanto l'accesso al proprietario è lecito.
+- Ramo "false": si stampa "r" (il riferimento mutabile). In questo ramo, dopo la creazione di "r" e l'assegnazione "*r = ...", non ci sono accessi diretti a "b" prima del println!; quindi l'uso esclusivo di "r" è lecito.
+Poiché in ogni ramo attivo si rispetta l'esclusività del prestito mutabile, il programma è ben tipato e compila.`,
+        fixes: [
+          {
+            label: "Rendere esplicita la fine del prestito prima di usare b",
+            code: `use rand::Rng;
+fn main() {
+  let mut b = Box::new(84);
+  let r = &mut b;
+  *r = Box::new(100);
+  let mut rng = rand::rng();
+  let n = rng.random_range(0..10);
+  if n > 5 {
+    drop(r);                 // fine esplicita del prestito mutabile
+    println!("{:?}", b);
+  } else {
+    println!("{:?}", r);
+  }
+}`,
+          },
+          {
+            label: "Limitare la vita del riferimento con un blocco",
+            code: `use rand::Rng;
+fn main() {
+  let mut b = Box::new(84);
+  {
+    let r = &mut b;
+    *r = Box::new(100);
+    let mut rng = rand::rng();
+    let n = rng.random_range(0..10);
+    if n <= 5 {
+      println!("{:?}", r);   // uso dentro al blocco
+    }
+  } // rilasciato qui
+  println!("{:?}", b);       // ora accesso a b è sempre lecito
+}`,
+          },
+          {
+            label: "Evitare aliasing passando la proprietà temporaneamente",
+            code: `use rand::Rng;
+fn main() {
+  let mut b = Box::new(84);
+  // sposta e ri-ottieni per ridurre la finestra del prestito
+  let mut tmp = b;
+  tmp = Box::new(100);
+  b = tmp;
+  let mut rng = rand::rng();
+  let n = rng.random_range(0..10);
+  if n > 5 { println!("{:?}", b); } else { println!("{:?}", &b); }
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+
+      {
+        id: "ch-3",
+        prompt:
+          "Perché questo programma è compilato? Perché si può accedere al Box nonostante ci sia un prestito?",
+        code: `fn main() {
+  let mut x = Box::new(150);
+  let mut z = &x;
+  for i in 0..10 {
+    println!("{:?}", z);
+    x = Box::new(i);
+    z = &x;
+  }
+  println!("{:?}", z);
+}`,
+        solution: `Il riferimento "z" prende in prestito "x" alla riga di inizializzazione e, ad ogni iterazione, viene usato nel println! prima di qualsiasi mutazione. 
+Quel println! segna la fine effettiva del tempo di vita del prestito corrente (ultimo uso). Subito dopo, la riassegnazione di "x" è lecita perché non esistono più usi pendenti di "z" in quell'iterazione.
+Poi si crea un nuovo prestito con "z = &x" che vale fino al println! della prossima iterazione (se esiste). In altre parole: 
+- riga 1–3: creazione di "x" e primo prestito "z = &x"; 
+- riga 6: ultimo uso del prestito corrente → il prestito termina;
+- riga 7: mutazione del proprietario "x" consentita;
+- riga 8: nuovo prestito "z = &x".
+Questo ciclo si ripete per ogni iterazione, mantenendo l'ordine “usa il prestito → termina → muta → crea nuovo prestito”, perciò il programma è valido.`,
+        fixes: [
+          {
+            label: "Rendere espliciti i confini del prestito con un blocco",
+            code: `fn main() {
+  let mut x = Box::new(150);
+  let mut z = &x;
+  for i in 0..10 {
+    {
+      println!("{:?}", z); // uso e fine prestito in questo blocco
+    }
+    x = Box::new(i);       // ora si può mutare
+    z = &x;                // nuovo prestito
+  }
+  println!("{:?}", z);
+}`,
+          },
+          {
+            label: "Prestare solo quando serve (minimizzare la durata)",
+            code: `fn main() {
+  let mut x = Box::new(150);
+  for i in 0..10 {
+    { let z = &x; println!("{:?}", z); } // prestito breve
+    x = Box::new(i);
+  }
+  let z = &x;
+  println!("{:?}", z);
+}`,
+          },
+          {
+            label:
+              "Usare stampa diretta quando non serve un binding persistente",
+            code: `fn main() {
+  let mut x = Box::new(150);
+  for i in 0..10 {
+    println!("{:?}", &x); // prestito creato e usato sul momento
+    x = Box::new(i);
+  }
+  println!("{:?}", &x);
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+    ],
+    totalCards: 3,
     completedCards: 0,
     reviewCards: 0,
   },
@@ -1440,6 +1625,577 @@ consume_once(); // FnOnce
     reviewCards: 0,
   },
   {
+    id: "review-3",
+    title: "Ripasso #3",
+    description: "Sfide di verifica sul lifetime (con soluzioni spiegate).",
+    icon: "🧩",
+    challenges: [
+      {
+        id: "ch-1",
+        prompt: "Perché questo programma NON compila? (Vec<&str> + temporaneo)",
+        code: `fn insert<'a>(vet: &mut Vec<&'a str>, s: &'a str) {
+  vet.push(s);
+}
+fn main() {
+  let mut v = Vec::<&str>::new();
+  insert(&mut v, &"Ciao".to_string());
+  println!("{:?}", v);
+}`,
+        solution: `Il parametro passato a insert è un riferimento a una String temporanea creata con "to_string()" e immediatamente referenziata con "&".
+Quella String vive solo per la durata dell'espressione; il riferimento risultante non vive abbastanza per essere immagazzinato nel Vec<&str>.
+Il borrow checker rileva che il riferimento ha un lifetime inferiore a quello del vettore e rifiuta la compilazione (rischio di dangling reference).`,
+        fixes: [
+          {
+            label: "Memorizza possesso: usa Vec<String>",
+            code: `fn insert(vet: &mut Vec<String>, s: &str) {
+  vet.push(s.to_string());
+}
+fn main() {
+  let mut v = Vec::<String>::new();
+  insert(&mut v, "Ciao");
+  println!("{:?}", v);
+}`,
+          },
+          {
+            label: "Mantieni viva la String (attenzione al lifetime!)",
+            code: `fn insert<'a>(vet: &mut Vec<&'a str>, s: &'a str) {
+  vet.push(s);
+}
+fn main() {
+  let mut v: Vec<&str> = Vec::new();
+  let s = "Ciao".to_string();     // vive finché serve
+  insert(&mut v, &s);             // ok perché &s vive fino alla stampa
+  println!("{:?}", v);
+  // Se v dovesse vivere oltre 's', diventerebbe di nuovo illegale
+}`,
+          },
+          {
+            label: "Usa un literal &'static str",
+            code: `fn insert<'a>(vet: &mut Vec<&'a str>, s: &'a str) {
+  vet.push(s);
+}
+fn main() {
+  let mut v = Vec::<&str>::new();
+  insert(&mut v, "Ciao"); // literal: &'static str
+  println!("{:?}", v);
+}`,
+          },
+          {
+            label: "Flessibile con Cow<'a, str>: prestito o possesso",
+            code: `use std::borrow::Cow;
+fn insert<'a>(vet: &mut Vec<Cow<'a, str>>, s: &'a str) {
+  vet.push(Cow::Owned(s.to_string())); // oppure Cow::Borrowed(s)
+}
+fn main() {
+  let mut v: Vec<Cow<'_, str>> = Vec::new();
+  insert(&mut v, "Ciao");
+  println!("{:?}", v);
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+
+      {
+        id: "ch-2",
+        prompt:
+          "Perché questo programma compila senza annotazioni di lifetime? (Vec<String>)",
+        code: `fn insert(vet: &mut Vec<String>, s: &str) {
+  vet.push(s.to_string());
+}
+fn main() {
+  let mut v = Vec::<String>::new();
+  {
+    let messaggio = String::from("Ciao");
+    insert(&mut v, &messaggio);
+    println!("{:?}", v);
+  }
+  println!("{:?}", v); // funziona!
+}`,
+        solution: `Il vettore possiede elementi di tipo String, quindi non immagazzina riferimenti.
+La chiamata a "to_string()" crea una nuova String sullo heap che viene mossa nel Vec: nessun riferimento da tracciare a livello di lifetime, quindi non servono annotazioni.
+La firma di ToString chiarisce la semantica di possesso: "fn to_string(&self) -> String" (prende in prestito, restituisce possesso).`,
+        fixes: [
+          {
+            label: "Usa to_owned/into (idiomatico)",
+            code: `fn insert(vet: &mut Vec<String>, s: &str) {
+  vet.push(s.to_owned());      // equivalente a to_string per &str
+  // vet.push(s.into());       // alternativa idiomatica
+}`,
+          },
+          {
+            label: "Passa già una String e spostala",
+            code: `fn insert_move(vet: &mut Vec<String>, s: String) {
+  vet.push(s); // move
+}
+fn main() {
+  let mut v = Vec::<String>::new();
+  let messaggio = String::from("Ciao");
+  insert_move(&mut v, messaggio); // messaggio mosso
+  println!("{:?}", v);
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+      {
+        id: "ch-3",
+        prompt:
+          "Perché con move + i32 (Copy) l’esterno resta 0? (closure FnMut con cattura per copia)",
+        code: `fn main() {
+  let mut count = 0;
+  let mut increment = move || {
+    count += 1;
+    println!("Il conteggio è: {}", count);
+  };
+  increment();
+  increment();
+  println!("Hello, {}", count);
+}`,
+        solution: `Con "move", la chiusura cattura "count" per valore. Poiché i32 implementa Copy, la cattura è una copia.
+La chiusura modifica la sua copia interna (stato della closure), non la variabile esterna: per questo stampa 1, poi 2, e fuori resta 0.
+"let mut increment" è necessario perché la closure modifica il proprio ambiente catturato (FnMut).`,
+        fixes: [
+          {
+            label: "Senza move: cattura per riferimento mutabile",
+            code: `fn main() {
+  let mut count = 0;
+  let mut increment = || { // niente move
+    count += 1;            // &mut count (prestito esclusivo durante la chiamata)
+    println!("Il conteggio è: {}", count);
+  };
+  increment();
+  increment();
+  println!("Hello, {}", count); // ora stampa 2
+}`,
+          },
+          {
+            label: "Condividere stato anche con move usando Cell",
+            code: `use std::cell::Cell;
+fn main() {
+  let count = Cell::new(0);
+  let increment = move || {
+    count.set(count.get() + 1);
+    println!("Il conteggio è: {}", count.get());
+  };
+  increment(); increment();
+  println!("Hello, {}", count.get()); // 2
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+      {
+        id: "ch-4",
+        prompt:
+          "Perché questo programma NON compila con Box? Cosa cambia rispetto a i32 Copy?",
+        code: `fn main() {
+  let mut myBox = Box::new(42);
+  let mut increment = move || {
+    *myBox += 1;
+    println!("Il conteggio è: {}", *myBox);
+  };
+  increment();
+  increment();
+  println!("Hello, {}", *myBox);
+}`,
+        solution: `Con "move", la chiusura sposta "myBox" dentro di sé (Box non è Copy). L'ultimo println! prova a usare "myBox" dopo che è stato mosso nella closure: uso dopo move → errore di compilazione.
+Differenza col caso i32: i32 è Copy, quindi la chiusura lavora su una copia e l'originale esterno resta disponibile; Box non è Copy, quindi l'originale viene consumato.`,
+        fixes: [
+          {
+            label: "Cattura per riferimento mutabile (niente move)",
+            code: `fn main() {
+  let mut myBox = Box::new(42);
+  let mut increment = || {
+    *myBox += 1; // &mut myBox durante la chiamata
+    println!("Il conteggio è: {}", *myBox);
+  };
+  increment();
+  increment();
+  println!("Hello, {}", *myBox); // ora è lecito
+}`,
+          },
+          {
+            label: "Se vuoi mantenere move, non usare myBox fuori",
+            code: `fn main() {
+  let mut myBox = Box::new(42);
+  let mut increment = move || {
+    *myBox += 1;
+    println!("Il conteggio è: {}", *myBox);
+  };
+  increment();
+  increment();
+  // niente uso di myBox qui: è posseduto dalla closure
+}`,
+          },
+          {
+            label: "Condividere possesso: Rc<RefCell<i32>>",
+            code: `use std::cell::RefCell;
+use std::rc::Rc;
+fn main() {
+  let x = Rc::new(RefCell::new(42));
+  let x2 = Rc::clone(&x);
+  let mut increment = move || {
+    *x2.borrow_mut() += 1;
+    println!("Il conteggio è: {}", *x2.borrow());
+  };
+  increment(); increment();
+  println!("Hello, {}", *x.borrow());
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+      {
+        id: "ch-5",
+        prompt:
+          "Perché senza move la chiusura aggiorna count e il valore esterno riflette gli aggiornamenti?",
+        code: `fn main() {
+  let mut count = 0;
+  let mut increment_n = |n| {
+    count += n;
+    println!("Il conteggio è: {}", count);
+  };
+  increment_n(10);
+  increment_n(5);
+  println!("Hello, {}", count);
+}`,
+        solution: `Senza "move", la chiusura cattura "count" per riferimento mutabile a ogni chiamata (FnMut).
+Durante l'esecuzione di "increment_n", esiste un prestito esclusivo su "count"; quel prestito termina alla fine della chiamata, quindi tra una chiamata e l'altra è lecito leggere "count" dall'esterno (come nell'esempio che stampa "Hello, 15").
+Se si volesse usare "count" mentre è ancora preso in prestito dalla chiusura, il compilatore lo vieterebbe.`,
+        fixes: [
+          {
+            label: "Rendere la closure Fn (senza mut) con Cell",
+            code: `use std::cell::Cell;
+fn main() {
+  let count = Cell::new(0);
+  let increment_n = |n: i32| {
+    count.set(count.get() + n);
+    println!("Il conteggio è: {}", count.get());
+  };
+  increment_n(10);
+  println!("Hello, {}", count.get());
+  increment_n(5);
+}`,
+          },
+          {
+            label: "Evitare cattura: passa &mut esplicito a una funzione",
+            code: `fn inc_n(count: &mut i32, n: i32) {
+  *count += n;
+  println!("Il conteggio è: {}", *count);
+}
+fn main() {
+  let mut count = 0;
+  inc_n(&mut count, 10);
+  println!("Hello, {}", count);
+  inc_n(&mut count, 5);
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+      {
+        id: "ch-6",
+        prompt:
+          "Perché questa closure si può chiamare due volte e stampa lo stesso risultato?",
+        code: `fn main() {
+  let data = vec![1, 2, 3, 4, 5];
+  let process_data = move || { // move può anche essere omesso
+    let sum: i32 = data.iter().sum();
+    println!("La somma dei dati è: {}", sum);
+  };
+  process_data();
+  process_data();
+}`,
+        solution: `Anche con move, la closure cattura "data" per valore ma non lo consuma: dentro usa "data.iter()", che prende un prestito immutabile (&) sul Vec e non ne muta lo stato. 
+La closure non modifica l'ambiente catturato e può quindi essere invocata più volte (è una Fn), producendo sempre la stessa somma finché il contenuto non cambia.`,
+        fixes: [
+          {
+            label: "Variante senza move (cattura per riferimento)",
+            code: `fn main() {
+  let data = vec![1, 2, 3, 4, 5];
+  let process_data = || {
+    let sum: i32 = data.iter().sum();
+    println!("La somma dei dati è: {}", sum);
+  };
+  process_data();
+  process_data();
+}`,
+          },
+          {
+            label:
+              "Attenzione: usare into_iter() la renderebbe FnOnce (consuma)",
+            code: `fn main() {
+  let data = vec![1, 2, 3, 4, 5];
+  let f = move || data.into_iter().count(); // consuma "data" → FnOnce
+  let n1 = f();
+  // let n2 = f(); // errore: la closure ha già consumato il suo ambiente
+  println!("{}", n1);
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+      {
+        id: "ch-7",
+        prompt:
+          "La closure con move muta il Vec e poi fuori si usa ancora data: compila?",
+        code: `fn main() {
+  let mut data = vec![1, 2, 3, 4, 5];
+  let mut process_data = move || {
+    data.push(6);
+    let sum: i32 = data.iter().sum();
+    println!("La somma dei dati è: {}", sum);
+  };
+  process_data();
+  data.push(7);
+}`,
+        solution: `Non compila. Con "move" la closure sposta "data" dentro di sé; dopo l'assegnazione della closure, il binding esterno "data" è stato mosso e non è più accessibile. 
+Il borrow checker segnala l'errore sull'uso esterno "data.push(7);" perché il proprietario è ormai la closure.`,
+        fixes: [
+          {
+            label: "Senza move: cattura per riferimento mutabile",
+            code: `fn main() {
+  let mut data = vec![1, 2, 3, 4, 5];
+  let mut process_data = || {
+    data.push(6);
+    let sum: i32 = data.iter().sum();
+    println!("La somma dei dati è: {}", sum);
+  };
+  process_data();    // prestito mutabile finisce qui
+  data.push(7);      // ora è di nuovo accessibile
+}`,
+          },
+          {
+            label: "Se vuoi mantenere move, non riusare data fuori",
+            code: `fn main() {
+  let mut data = vec![1, 2, 3, 4, 5];
+  let mut process_data = move || {
+    data.push(6);
+    let sum: i32 = data.iter().sum();
+    println!("La somma dei dati è: {}", sum);
+  };
+  process_data();
+  // nessun uso di "data" qui: è posseduto dalla closure
+}`,
+          },
+          {
+            label: "Condividere possesso e mutabilità con Rc<RefCell<_>>",
+            code: `use std::cell::RefCell;
+use std::rc::Rc;
+fn main() {
+  let data = Rc::new(RefCell::new(vec![1, 2, 3, 4, 5]));
+  let data2 = Rc::clone(&data);
+  let mut process_data = move || {
+    data2.borrow_mut().push(6);
+    let sum: i32 = data2.borrow().iter().sum();
+    println!("La somma dei dati è: {}", sum);
+  };
+  process_data();
+  data.borrow_mut().push(7); // accesso esterno consentito
+  println!("{:?}", data.borrow());
+}`,
+          },
+          {
+            label: "Non catturare: passa &mut esplicito a una funzione",
+            code: `fn process_data(v: &mut Vec<i32>) {
+  v.push(6);
+  let sum: i32 = v.iter().sum();
+  println!("La somma dei dati è: {}", sum);
+}
+fn main() {
+  let mut data = vec![1, 2, 3, 4, 5];
+  process_data(&mut data);
+  data.push(7);
+  println!("{:?}", data);
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+      {
+        id: "ch-8",
+        prompt:
+          "Senza move: la closure muta il Vec e poi lo si usa fuori. Compila? Che output produce?",
+        code: `fn main() {
+  let mut data = vec![1, 2, 3, 4, 5];
+  let mut process_data = || {
+    data.push(6);
+    let sum: i32 = data.iter().sum();
+    println!("La somma dei dati è: {}", sum);
+  };
+  process_data();
+  data.push(7);
+  println!("{:?}", data);
+}`,
+        solution: `Compila e stampa:
+"La somma dei dati è: 21"
+"[1, 2, 3, 4, 5, 6, 7]"
+
+Perché: senza "move", la closure prende un prestito mutabile su "data" durante la chiamata (FnMut). Alla fine della chiamata, il prestito termina, quindi "data" è di nuovo disponibile e può essere mutato dall'esterno.`,
+        fixes: [
+          {
+            label: "Chiamare più volte alternando usi esterni",
+            code: `fn main() {
+  let mut data = vec![1, 2, 3, 4, 5];
+  let mut process_data = || {
+    data.push(6);
+    let sum: i32 = data.iter().sum();
+    println!("Somma: {}", sum);
+  };
+  process_data();          // prestito termina qui
+  println!("{:?}", data);  // lecito
+  process_data();          // nuovo prestito
+  data.push(7);            // di nuovo lecito dopo la chiamata
+  println!("{:?}", data);
+}`,
+          },
+          {
+            label: "Ridurre la durata del prestito con un blocco",
+            code: `fn main() {
+  let mut data = vec![1, 2, 3, 4, 5];
+  {
+    let mut process_data = || {
+      data.push(6);
+      let sum: i32 = data.iter().sum();
+      println!("Somma: {}", sum);
+    };
+    process_data();
+  } // il borrow della closure è sicuramente terminato
+  data.push(7);
+  println!("{:?}", data);
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+      {
+        id: "ch-9",
+        prompt:
+          "Perché questa closure non può essere invocata due volte? (count consuma l'iteratore)",
+        code: `fn main() {
+  let range = 1..10;
+  let f = || range.count();
+  let n1 = f();
+  println!("{n1}");
+  let n2 = f();
+}`,
+        solution: `Il metodo "count()" è un consumatore di iteratore: richiede il possesso dell'iteratore e lo esaurisce. 
+La closure, alla prima chiamata, muove "range" fuori dal proprio ambiente (FnOnce). Alla seconda chiamata non ha più il valore da consumare → errore: la closure implementa solo FnOnce.`,
+        fixes: [
+          {
+            label: "Rigenera il range ad ogni chiamata (nessuna cattura)",
+            code: `fn main() {
+  let f = || (1..10).count();
+  let n1 = f();
+  let n2 = f(); // ok
+  println!("{} {}", n1, n2);
+}`,
+          },
+          {
+            label: "Clona il range (Range è Clone) prima di consumarlo",
+            code: `fn main() {
+  let range = 1..10;
+  let f = || range.clone().count(); // non muove l'originale
+  let n1 = f();
+  let n2 = f();
+  println!("{} {}", n1, n2);
+}`,
+          },
+          {
+            label: "Se deve restare FnOnce, chiamala una sola volta",
+            code: `fn main() {
+  let range = 1..10;
+  let f = || range.count(); // FnOnce
+  let n1 = f();
+  println!("{}", n1);
+  // niente seconda chiamata
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+      {
+        id: "ch-10",
+        prompt: "Perché my_closure implementa solo FnOnce?",
+        code: `fn main() {
+  let s = String::from("ciao");
+  // La closure prende possesso della variabile s
+  let my_closure = move || {
+    println!("Stampo la stringa: {}", s);
+    s
+  };
+  // my_closure implementa solo FnOnce
+  my_closure();
+}`,
+        solution: `La closure cattura "s" per valore (move) e la **restituisce** come valore di ritorno (l'ultima espressione non termina con ';').
+Restituire "s" la sposta fuori dall'ambiente catturato: dopo la prima invocazione, la closure ha consumato "s" e non può essere richiamata di nuovo.
+Una closure che **muove fuori** un catturato può essere chiamata al massimo una volta → implementa solo **FnOnce**.
+Versione migliorata: assegnare il valore di ritorno a una variabile esterna e usarlo lì.`,
+        fixes: [
+          {
+            label: "Miglioramento proposto: usa il valore di ritorno una volta",
+            code: `fn main() {
+  let s = String::from("ciao");
+  let my_closure = move || {
+    println!("Stampo la stringa: {}", s);
+    s
+  };
+  let t = my_closure(); // sposta 's' fuori dalla closure
+  println!("{}", t);
+}`,
+          },
+          {
+            label:
+              "Non muovere fuori: non restituire 's' → Fn richiamabile più volte",
+            code: `fn main() {
+  let s = String::from("ciao");
+  let my_closure = move || {
+    println!("Stampo la stringa: {}", s); // solo lettura per &s
+    // niente return di 's'
+  };
+  my_closure();
+  my_closure(); // ok: non ha consumato 's'
+}`,
+          },
+          {
+            label:
+              "Restituisci una copia (clone) per poter richiamare la closure",
+            code: `fn main() {
+  let s = String::from("ciao");
+  let my_closure = move || {
+    println!("Stampo la stringa: {}", s);
+    s.clone() // ritorna una nuova String, non consuma l'originale
+  };
+  let t1 = my_closure();
+  let t2 = my_closure();
+  println!("{} {}", t1, t2);
+}`,
+          },
+          {
+            label:
+              "Senza move: cattura per riferimento e restituisci una copia",
+            code: `fn main() {
+  let s = String::from("ciao");
+  let my_closure = || {
+    println!("Stampo la stringa: {}", s); // &s
+    s.clone()
+  };
+  let t1 = my_closure();
+  let t2 = my_closure();
+  println!("{} {}", t1, t2);
+  // Nota: senza 'move' puoi ancora usare 's' qui se serve.
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+    ],
+    totalCards: 10,
+    completedCards: 0,
+    reviewCards: 0,
+  },
+  {
     id: "error-handling",
     title: "Gestione degli errori",
     description: "Result, Option e pattern di gestione degli errori",
@@ -1843,11 +2599,252 @@ let top = heap.pop(); // parola più frequente`,
   },
   {
     id: "io",
-    title: "Input / Output [DA FARE]",
+    title: "Input / Output",
     description: "File I/O, networking e gestione dei flussi di dati",
     icon: "💾",
-    flashcards: createSampleFlashcards("Input / Output", 8),
-    totalCards: 8,
+    flashcards: [
+      {
+        id: "io-1",
+        rule: "Modello del file system: file, metadati, permessi e accesso random",
+        explanation:
+          "Un file è un blocco di byte associato a un nome all’interno di un file system gerarchico (cartelle/percorsi). Ogni file ha metadati (proprietario, permessi, date, dimensione). L’accesso è random: puoi posizionarti e leggere/scrivere in punti arbitrari. Le librerie standard espongono API portabili (std::fs::File).",
+        codeExample: `// Elenco metadata essenziali (concettualmente): nome, owner, permessi, timestamps, size
+// In Unix, i permessi si rappresentano anche in ottale (es. 644, 755).`,
+        status: "not-started",
+      }, // :contentReference[oaicite:1]{index=1}
+
+      {
+        id: "io-2",
+        rule: "Path e PathBuf: componibilità portabile, differenza da str/String",
+        explanation:
+          "Path è una vista unsized e read-only sul percorso (come str), PathBuf possiede il percorso e può mutare (come String). Nascondono differenze di separatori (Unix '/', Windows '\\\\') e offrono metodi per navigare/segmentare. Molte funzioni accettano P: AsRef<Path> per lavorare con &str/String in modo generico.",
+        codeExample: `use std::path::{Path, PathBuf};
+fn main() {
+  let p = Path::new("data").join("logs").join("app.txt");
+  let mut pb = PathBuf::from("data");
+  pb.push("images"); pb.set_file_name("img.png");
+  assert!(p.parent().is_some());
+}`,
+        status: "not-started",
+      }, // :contentReference[oaicite:2]{index=2}
+
+      {
+        id: "io-3",
+        rule: "Directory: read_dir / create_dir / remove_dir e precondizioni",
+        explanation:
+          "read_dir(path) restituisce un iteratore di DirEntry con nome, tipo e metadati; create_dir fallisce se esiste o manca il genitore; remove_dir rimuove solo se vuota e permessi adeguati.",
+        codeExample: `use std::fs;
+fn main() -> std::io::Result<()> {
+  let here = ".";
+  for e in fs::read_dir(here)? {
+    let e = e?;
+    println!("{:?}", e.file_name());
+  }
+  fs::create_dir("tmpdir")?;
+  fs::remove_dir("tmpdir")?;
+  Ok(())
+}`,
+        status: "not-started",
+      }, // :contentReference[oaicite:3]{index=3}
+
+      {
+        id: "io-4",
+        rule: "Copia/rinomina/rimozione: copy, rename, remove_file",
+        explanation:
+          "copy(from,to) duplica i contenuti e ritorna i byte copiati; rename può spostare/atomically swap a seconda dell’OS; remove_file elimina un file (su alcuni OS la rimozione può essere differita se aperto).",
+        codeExample: `use std::fs;
+fn main() -> std::io::Result<()> {
+  fs::copy("src.txt","dst.txt")?;
+  fs::rename("dst.txt","renamed.txt")?;
+  fs::remove_file("renamed.txt")?;
+  Ok(())
+}`,
+        status: "not-started",
+      }, // :contentReference[oaicite:4]{index=4}
+
+      {
+        id: "io-5",
+        rule: "Aprire file: File::open / File::create e OpenOptions avanzate",
+        explanation:
+          "File::open apre in lettura se esiste; File::create tronca o crea e apre in scrittura. OpenOptions consente combinazioni (read, write, create, truncate, append). I parametri percorso sono generici tramite AsRef<Path>.",
+        codeExample: `use std::fs::{File, OpenOptions};
+use std::io::{Read, Write};
+fn main() -> std::io::Result<()> {
+  let mut f = File::open("input.txt")?;
+  let mut s = String::new(); f.read_to_string(&mut s)?;
+  let mut out = OpenOptions::new().write(true).create(true).truncate(true).open("out.txt")?;
+  out.write_all(s.as_bytes())?;
+  Ok(())
+}`,
+        status: "not-started",
+      }, // :contentReference[oaicite:5]{index=5}
+
+      {
+        id: "io-6",
+        rule: "Helper ad alto livello: fs::read_to_string e fs::write",
+        explanation:
+          "read_to_string(path) legge l’intero file in una String (assume UTF-8 valido); write(path, bytes) sovrascrive con il buffer fornito. Sono comodi per file testuali “piccoli/medi”: per file grandi è preferibile lo streaming.",
+        codeExample: `use std::fs;
+fn main() -> std::io::Result<()> {
+  fs::write("note.txt", "riga1\\nriga2")?;
+  let txt = fs::read_to_string("note.txt")?;
+  println!("{}", txt);
+  Ok(())
+}`,
+        status: "not-started",
+      }, // :contentReference[oaicite:6]{index=6}
+
+      {
+        id: "io-7",
+        rule: "Gestione errori I/O: ErrorKind, matching e retry per Interrupted",
+        explanation:
+          "Le operazioni I/O restituiscono Result con io::Error; .kind() classifica cause comuni: NotFound, PermissionDenied, AlreadyExists, InvalidInput, TimedOut, Interrupted (tipica da segnali: spesso si ritenta).",
+        codeExample: `use std::io::{self, Read, ErrorKind};
+use std::fs::File;
+fn main() {
+  match File::open("missing.txt") {
+    Ok(mut f) => { let mut s=String::new(); let _=f.read_to_string(&mut s); }
+    Err(e) => match e.kind() {
+      ErrorKind::NotFound => eprintln!("manca"),
+      ErrorKind::PermissionDenied => eprintln!("permessi"),
+      _ => eprintln!("altro: {}", e),
+    }
+  }
+}`,
+        status: "not-started",
+      }, // :contentReference[oaicite:7]{index=7}
+
+      {
+        id: "io-8",
+        rule: "Tratto Read: read(), read_exact(), read_to_end(), chain(), take()",
+        explanation:
+          "Read definisce read(&mut [u8])→usize: può restituire scritture parziali, Ok(0) può indicare EOF. read_exact riempie tutto il buffer o fallisce (UnexpectedEof). read_to_end accumula fino a EOF. chain concatena reader; take limita i byte massimi. Ogni read può invocare una syscall (costo).",
+        codeExample: `use std::io::{self, Read};
+use std::fs::File;
+fn main() -> io::Result<()> {
+  let mut f = File::open("test.txt")?;
+  let mut buf = [0u8; 16];
+  let n = f.read(&mut buf)?;
+  if n == 0 { return Ok(()); }
+  let mut more = Vec::new();
+  f.read_to_end(&mut more)?;
+  Ok(())
+}`,
+        status: "not-started",
+      }, // :contentReference[oaicite:8]{index=8}
+
+      {
+        id: "io-9",
+        rule: "BufRead: buffering, lines()/read_line(), fill_buf()+consume()",
+        explanation:
+          "BufRead introduce un buffer utente per ridurre syscall su letture piccole. lines() produce Result<String> per riga; read_line appende a una String esistente. Con fill_buf ritorni una slice interna; DEVI chiamare consume(len) dopo l’elaborazione, altrimenti leggerai sempre gli stessi byte.",
+        codeExample: `use std::io::{BufRead, BufReader};
+use std::fs::File;
+fn main() -> std::io::Result<()> {
+  let f = File::open("poema.txt")?;
+  let mut r = BufReader::new(f);
+  let mut line = String::new();
+  r.read_line(&mut line)?; println!("{}", line);
+  line.clear();
+  let buf = r.fill_buf()?; print!("{}", String::from_utf8_lossy(buf));
+  let len = buf.len(); r.consume(len);
+  Ok(())
+}`,
+        status: "not-started",
+      }, // :contentReference[oaicite:9]{index=9}
+
+      {
+        id: "io-10",
+        rule: "Tratto Write: write(), write_all(), flush() e macro write!()",
+        explanation:
+          "Write::write può eseguire scritture parziali; write_all ripete fino a esaurire il buffer o fallire. flush forza lo svuotamento dei buffer verso il kernel. La macro write! formatta e scrive su un writer, e (per come presentato) include il flush prima del ritorno.",
+        codeExample: `use std::io::{self, Write};
+use std::fs::File;
+fn main() -> io::Result<()> {
+  let mut f = File::create("out.txt")?;
+  let data = b"Hello\\n";
+  let _ = f.write(data)?;
+  f.write_all(b"World\\n")?;
+  f.flush()?;
+  Ok(())
+}`,
+        status: "not-started",
+      }, // :contentReference[oaicite:10]{index=10}
+
+      {
+        id: "io-11",
+        rule: "Seek/posizionamento: Start/End/Current, stream_position, rewind",
+        explanation:
+          "Seek tratta il file come un array di byte indicizzato: puoi posizionare il cursore con SeekFrom::{Start,End,Current}, leggere/scrivere in posizioni arbitrarie, leggere la posizione corrente o riavvolgere all’inizio.",
+        codeExample: `use std::io::{self, Read, Write, Seek, SeekFrom};
+use std::fs::OpenOptions;
+fn main() -> io::Result<()> {
+  let mut f = OpenOptions::new().read(true).write(true).create(true).open("ex.txt")?;
+  f.write_all(b"Hello, world!")?;
+  f.seek(SeekFrom::Start(7))?;
+  f.write_all(b"Rust")?;
+  f.rewind()?;
+  let mut s = String::new(); f.read_to_string(&mut s)?;
+  println!("{}", s); // "Hello, Rust!"
+  Ok(())
+}`,
+        status: "not-started",
+      }, // :contentReference[oaicite:11]{index=11}
+
+      {
+        id: "io-12",
+        rule: "Lettura binaria e dispositivi speciali; attenzione a read_exact",
+        explanation:
+          "Puoi leggere stream binari (anche dispositivi speciali come /dev/urandom). read_exact richiede che il flusso fornisca esattamente buf.len() byte, altrimenti fallisce con UnexpectedEof; converti i buffer con from_*_bytes secondo l’endian desiderato.",
+        codeExample: `use std::fs::File;
+use std::io::Read;
+fn main() -> std::io::Result<()> {
+  let mut f = File::open("/dev/urandom")?;
+  let mut buff = [0u8; 4];
+  f.read_exact(&mut buff)?;
+  let x = i32::from_be_bytes(buff);
+  println!("{}", x);
+  Ok(())
+}`,
+        status: "not-started",
+      }, // :contentReference[oaicite:12]{index=12}
+
+      {
+        id: "io-13",
+        rule: "RAII di File: niente close(), chiusura automatica a fine scope",
+        explanation:
+          "File segue RAII: alla fine dello scope (o quando viene droppato) rilascia la handle e le risorse kernel. Non esiste un metodo close esplicito; eventualmente puoi usare drop(file) per anticipare la chiusura.",
+        codeExample: `use std::fs::File;
+fn main() {
+  {
+    let _f = File::create("tmp.bin").unwrap();
+    // uso del file...
+  } // qui _f viene droppato e il file si chiude
+}`,
+        status: "not-started",
+      }, // :contentReference[oaicite:13]{index=13}
+
+      {
+        id: "io-14",
+        rule: "Contenuti strutturati: Serde per JSON/CSV (Serialize/Deserialize)",
+        explanation:
+          "Serde genera (via derive) serializer/deserializer efficienti per tipi arbitrari. Con serde_json serializzi/parsifichi JSON, con crate csv scrivi/leggi record tabellari. Attenzione alla validità dei dati e ai tipi compatibili; derive fallisce su campi ‘patologici’.",
+        codeExample: `use serde::{Serialize, Deserialize};
+#[derive(Serialize, Deserialize, Debug)]
+struct Persona { nome: String, eta: u32 }
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+  let v = vec![Persona{nome:"Ada".into(), eta:36}, Persona{nome:"Linus".into(), eta:55}];
+  let json = serde_json::to_string(&v)?; // o to_string_pretty
+  std::fs::write("people.json", json)?;
+  let s = std::fs::read_to_string("people.json")?;
+  let back: Vec<Persona> = serde_json::from_str(&s)?;
+  println!("{:?}", back);
+  Ok(())
+}`,
+        status: "not-started",
+      }, // :contentReference[oaicite:14]{index=14}
+    ],
+    totalCards: 14,
     completedCards: 0,
     reviewCards: 0,
   },
@@ -1974,32 +2971,858 @@ let top = heap.pop(); // parola più frequente`,
     reviewCards: 0,
   },
   {
+    id: "review-4",
+    title: "Ripasso #4",
+    description:
+      "Sfide di verifica su iteratori e smart pointers (con soluzioni spiegate).",
+    icon: "🧩",
+    challenges: [
+      {
+        id: "ch-1",
+        prompt: "for consuma il Vec: cosa succede agli elementi dopo il break?",
+        code: `fn main() {
+  let v = vec![1,2,3,4,5,6,7,8,8,10];
+  for num in v { // equivale a: for num in v.into_iter()
+    if num % 3 == 0 { break; }
+  }
+}`,
+        solution: `Il for su Vec<T> usa into_iter(), quindi **sposta** il vettore nel ciclo e ne consuma gli elementi.
+Quando esci con break:
+- gli elementi già estratti sono stati mossi in "num" (e poi droppati se non usati);
+- l'iteratore IntoIter viene droppato e, come effetto, **droppa anche tutti gli elementi rimanenti** non ancora estratti.
+Il Vec originale "v" è stato mosso dentro il for e non è più disponibile dopo il ciclo.`,
+        fixes: [
+          {
+            label: "Visualizza il comportamento con Drop personalizzato",
+            code: `#[derive(Debug)]
+struct S(i32);
+impl Drop for S {
+  fn drop(&mut self) { println!("Dropping S({})", self.0); }
+}
+fn main() {
+  let v = vec![S(1),S(2),S(3),S(4),S(5),S(6)];
+  for num in v {
+    println!("{:?}", num);
+    if num.0 % 3 == 0 { break; } // qui vedrai i drop del resto
+  }
+}`,
+          },
+          {
+            label: "Non consumare il vettore: itera per riferimento",
+            code: `fn main() {
+  let v = vec![1,2,3,4,5,6,7,8,9,10];
+  for num in &v { // &v.iter()
+    if *num % 3 == 0 { break; }
+  }
+  println!("{:?}", v); // ancora disponibile
+}`,
+          },
+          {
+            label: "Trova l'indice e usa slice senza consumare",
+            code: `fn main() {
+  let v = vec![1,2,3,4,5,6,7,8,9,10];
+  if let Some(idx) = v.iter().position(|n| n % 3 == 0) {
+    let (_scanditi, restanti) = v.split_at(idx);
+    println!("Restanti (slice): {:?}", restanti);
+  }
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+      {
+        id: "ch-2",
+        prompt:
+          "Rc<Node> e get_mut: perché ritorna None e cosa stampa il programma?",
+        code: `use std::rc::Rc;
+#[derive(Debug)]
+struct Node { value: i32, children: Vec<Rc<Node>> }
+fn main() {
+  let mut nipote1 = Rc::new(Node { value: 3, children: vec![] });
+  let nipote2 = Rc::new(Node { value: 6, children: vec![] });
+  let padre   = Rc::new(Node {
+    value: 9,
+    children: vec![Rc::clone(&nipote1), Rc::clone(&nipote2)],
+  });
+  let nonno   = Rc::new(Node {
+    value: 27,
+    children: vec![Rc::clone(&padre)],
+  });
+  match Rc::get_mut(&mut nipote1) {
+    Some(v) => v.children.push(Rc::clone(&nonno)),
+    None => println!("Non è possibile ottenere un riferimento mutabile."),
+  }
+  println!("{:#?}", nonno);
+}`,
+        solution: `Il programma compila e costruisce l'albero: "nonno" → "padre" → { "nipote1", "nipote2" }.
+"Rc::get_mut(&mut nipote1)" restituisce **None** perché richiede **unicità** (strong_count==1): ma "nipote1" è posseduto sia dalla variabile "nipote1" sia dentro "padre.children" → strong_count≥2. 
+Quindi non è possibile ottenere "&mut Node" tramite get_mut e compare il messaggio "Non è possibile ottenere un riferimento mutabile.".
+La stampa finale mostra l'albero senza il collegamento aggiuntivo, evitando anche di creare un ciclo (nonno→padre→nipote1→nonno) che con Rc puro provocherebbe una perdita di memoria.`,
+        fixes: [
+          {
+            label: "Mutare PRIMA di condividere (unicità garantita)",
+            code: `use std::rc::Rc;
+#[derive(Debug)]
+struct Node { value: i32, children: Vec<Rc<Node>> }
+fn main() {
+  let mut nipote1 = Rc::new(Node { value: 3, children: vec![] });
+  // OK: unico proprietario → get_mut funziona
+  Rc::get_mut(&mut nipote1).unwrap().children.push(Rc::new(Node{ value: 30, children: vec![] }));
+  let nipote2 = Rc::new(Node { value: 6, children: vec![] });
+  let padre   = Rc::new(Node { value: 9, children: vec![Rc::clone(&nipote1), Rc::clone(&nipote2)] });
+  let nonno   = Rc::new(Node { value: 27, children: vec![Rc::clone(&padre)] });
+  println!("{:#?}", nonno);
+}`,
+          },
+          {
+            label: "Consentire mutabilità condivisa con Rc<RefCell<Node>>",
+            code: `use std::{rc::Rc, cell::RefCell};
+#[derive(Debug)]
+struct Node { value: i32, children: Vec<Rc<RefCell<Node>>> }
+fn main() {
+  let nipote1 = Rc::new(RefCell::new(Node { value: 3, children: vec![] }));
+  let nipote2 = Rc::new(RefCell::new(Node { value: 6, children: vec![] }));
+  let padre   = Rc::new(RefCell::new(Node {
+    value: 9, children: vec![Rc::clone(&nipote1), Rc::clone(&nipote2)]
+  }));
+  let nonno   = Rc::new(RefCell::new(Node {
+    value: 27, children: vec![Rc::clone(&padre)]
+  }));
+  // Mutazione anche se condiviso
+  nipote1.borrow_mut().children.push(Rc::clone(&nonno));
+  println!("{:#?}", nonno);
+  // Attenzione: così si crea un ciclo Rc ↔ Rc (leak). Usa Weak per rompere il ciclo.
+}`,
+          },
+          {
+            label: "Evitare cicli usando Weak nei riferimenti ‘verso l’alto’",
+            code: `use std::rc::{Rc, Weak};
+#[derive(Debug)]
+struct Node { value: i32, parent: Weak<Node>, children: Vec<Rc<Node>> }
+fn new_node(value: i32, parent: Weak<Node>) -> Rc<Node> {
+  Rc::new(Node { value, parent, children: vec![] })
+}
+fn main() {
+  let nonno = new_node(27, Weak::new());
+  let padre = new_node(9, Rc::downgrade(&nonno));
+  // collega
+  let nipote1 = new_node(3, Rc::downgrade(&padre));
+  let nipote2 = new_node(6, Rc::downgrade(&padre));
+  // aggiorna children (serve RefCell se vuoi mutare dopo la creazione)
+  // questo esempio mostra solo la struttura dei tipi per rompere i cicli.
+  let _ = (nonno, padre, nipote1, nipote2);
+}`,
+          },
+          {
+            label:
+              "Clona-on-write con Rc::make_mut (attenzione: rompe la condivisione)",
+            code: `use std::rc::Rc;
+#[derive(Debug, Clone)]
+struct Node { value: i32, children: Vec<Rc<Node>> }
+fn main() {
+  let mut nipote1 = Rc::new(Node { value: 3, children: vec![] });
+  let padre = Rc::new(Node { value: 9, children: vec![Rc::clone(&nipote1)] });
+  // Non unico → make_mut clona il contenuto e rende unica la nuova istanza
+  Rc::make_mut(&mut nipote1).children.push(Rc::clone(&padre));
+  // Ora 'nipote1' non è più condiviso con 'padre.children[0]'
+  println!("{:?}", nipote1.children.len());
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+    ],
+    totalCards: 2,
+    completedCards: 0,
+    reviewCards: 0,
+  },
+  {
+    id: "error-handling",
+    title: "Gestione degli errori",
+    description: "Result, Option e pattern di gestione degli errori",
+    icon: "⚠️",
+    flashcards: createSampleFlashcards("Gestione degli errori", 10),
+    totalCards: 10,
+    completedCards: 0,
+    reviewCards: 0,
+  },
+  {
     id: "modules",
-    title: "Moduli [DA FARE]",
+    title: "Moduli",
     description: "Organizzazione del codice, crate e sistema di moduli",
     icon: "📂",
-    flashcards: createSampleFlashcards("Moduli", 7),
-    totalCards: 7,
+    flashcards: [
+      {
+        id: "mod-1",
+        rule: "Crate: unità di compilazione, linking e output (bin/lib)",
+        explanation:
+          "Un crate è l’unità di compilazione Rust: i sorgenti vengono compilati in oggetti e collegati in un eseguibile (con main) o in una libreria. Un crate binario è anche l’unità di versionamento/caricamento a runtime; se usa API esportate da un altro crate libreria, il linker combina i prodotti in base al tipo di libreria (statica/dinamica).",
+        codeExample: `// Cargo crea un package che può contenere più crate (bin/lib):
+// src/main.rs  -> crate binario
+// src/lib.rs   -> crate libreria
+// altri binari: src/bin/nome.rs`,
+        status: "not-started",
+      },
+      {
+        id: "mod-2",
+        rule: "Librerie statiche vs dinamiche: quando e perché",
+        explanation:
+          "Statico: il codice della libreria è copiato dentro l’eseguibile al link; nessun caricamento a runtime, più dimensione su disco. Dinamico: l’eseguibile contiene solo un riferimento e il SO carica la .dll/.so/.dylib all’avvio; più processi possono condividere la stessa copia in memoria (spazio degli indirizzi del SO), uso risorse più efficiente.",
+        codeExample: `// Statico: link-time copy nel binario
+// Dinamico: il loader del SO risolve e mappa la libreria all'avvio`,
+        status: "not-started",
+      },
+      {
+        id: "mod-3",
+        rule: "Cargo.toml [lib] crate-type: rlib, dylib, staticlib, cdylib",
+        explanation:
+          "Il tipo di libreria si imposta in [lib]. rlib (default) è una libreria statica Rust per utenti Rust; dylib è dinamica Rust; staticlib è una libreria statica compatibile C (.a/.lib) per utenti non-Rust; cdylib è dinamica compatibile C (.so/.dll/.dylib). Scegli in base a chi consumerà la libreria e a come vuoi linkare.",
+        codeExample: `[lib]
+name = "mylib"
+crate-type = ["rlib"]   // o: ["dylib"], ["staticlib"], ["cdylib"]`,
+        status: "not-started",
+      },
+      {
+        id: "mod-4",
+        rule: "Creare e usare un’rlib (libreria Rust statica) da un binario",
+        explanation:
+          "cargo new my_lib --lib genera la struttura base. Esporre funzioni con pub in src/lib.rs. Nel binario, dichiarare la dipendenza in [dependencies] via path e chiamare le API. Il linking è statico (rlib) e trasparente per Cargo.",
+        codeExample: `// my_lib/src/lib.rs
+pub fn add(a: u64, b: u64) -> u64 { a + b }
+
+// my_app/Cargo.toml
+// [dependencies]
+// my_lib = { path = "../my_lib" }
+
+// my_app/src/main.rs
+use my_lib;
+fn main() { println!("{}", my_lib::add(1,2)); }`,
+        status: "not-started",
+      },
+      {
+        id: "mod-5",
+        rule: "Creare e usare una dylib (libreria Rust dinamica) da un binario",
+        explanation:
+          'Per una libreria dinamica Rust, imposta crate-type = ["dylib"]. Il binario la riferisce come dipendenza e la usa con use my_lib2::.... Il build genera l’artefatto di piattaforma (es. libmylib2.so / my_lib2.dll) accanto ai target.',
+        codeExample: `// my_lib2/Cargo.toml
+[lib]
+crate-type = ["dylib"]
+
+// my_lib2/src/lib.rs
+pub fn somma(a: u64, b: u64) -> u64 { a + b }
+
+// binario:
+use my_lib2;
+fn main() { println!("{}", my_lib2::somma(1,2)); }`,
+        status: "not-started",
+      },
+      {
+        id: "mod-6",
+        rule: "Output nominale delle librerie dinamiche a build completata",
+        explanation:
+          "Compilando una dylib ottieni: Windows → nome.dll, Linux → libnome.so, macOS → libnome.dylib. Cargo colloca i file nella cartella target (profilo debug/release); l’eseguibile dipendente caricherà la libreria a runtime.",
+        codeExample: `// target/debug/
+//   my_app.exe
+//   my_lib2.dll   // Windows (oppure libmy_lib2.so su Linux)`,
+        status: "not-started",
+      },
+      {
+        id: "mod-7",
+        rule: 'Esportare API compatibili C: staticlib/cdylib, extern "C", #[no_mangle]',
+        explanation:
+          'Per esporre funzioni a C: scegli staticlib (link statico) o cdylib (dinamico). Marca le funzioni con extern "C" per ABI C e #[no_mangle] per evitare il name mangling; così il linker C le trova col nome atteso. Compila con cargo build --release e linka dal C.',
+        codeExample: `// Cargo.toml (lato Rust)
+[lib]
+crate-type = ["staticlib"]   // o ["cdylib"]
+
+// src/lib.rs
+#[no_mangle]
+pub extern "C" fn somma(a: u64, b: u64) -> u64 { a + b }`,
+        status: "not-started",
+      },
+      {
+        id: "mod-8",
+        rule: "Link da C: comandare gcc verso la libreria Rust",
+        explanation:
+          "Dopo il build (profilo release) avrai libmylib3.a (Linux/macOS) o mylib3.lib (Windows). Da C compila e linka specificando il path alla libreria (-L) e il nome senza prefisso lib né suffisso (-l).",
+        codeExample: `// main.c
+// extern unsigned long long somma(unsigned long long, unsigned long long);
+// gcc main.c -L./target/release -lmylib3 -o main`,
+        status: "not-started",
+      },
+      {
+        id: "mod-9",
+        rule: "Albero dei moduli: default privato, pub e catena di accessibilità",
+        explanation:
+          "Il crate è un albero di moduli (mod). Di default tutto è privato e visibile al modulo che lo contiene. Anteponendo pub un item diventa pubblico, ma può essere usato da fuori solo se tutti i moduli lungo il cammino sono a loro volta accessibili (pub o antenati del chiamante).",
+        codeExample: `mod my_mod {
+  fn private_fn() {}
+  pub fn public_fn() {}
+  mod private_nested {}
+  pub mod public_nested { pub fn api() {} }
+}
+fn main() {
+  my_mod::public_fn();
+  my_mod::public_nested::api();
+}`,
+        status: "not-started",
+      },
+      {
+        id: "mod-10",
+        rule: "Percorsi assoluti/relativi: crate::, self::, super:: e use",
+        explanation:
+          "Un percorso assoluto parte da crate:: (crate corrente) o da un nome di crate esterno; relativo parte da self:: (modulo corrente), super:: (genitore) o da un sotto-modulo. use importa simboli o moduli per evitare percorsi prolissi; use path::* espone tutti i pubblici del modulo.",
+        codeExample: `mod genitore {
+  fn f2() {}
+  pub fn f1() { f2(); }
+  pub mod figlio {
+    pub fn g() { super::f2(); self::h(); }
+    fn h() {}
+  }
+}
+use genitore::figlio::g;
+fn main() { g(); }`,
+        status: "not-started",
+      },
+      {
+        id: "mod-11",
+        rule: "Organizzazione sorgenti: file singolo, nome.rs, cartella/mod.rs",
+        explanation:
+          "Un sotto-modulo può essere definito: (1) inline nello stesso file con mod nome { ... }; (2) in un file nome.rs nella stessa cartella, previa dichiarazione mod nome; nel genitore; (3) in una cartella nome/ con mod.rs (che può a sua volta dichiarare sotto-moduli). Le dipendenze esterne si elencano in [dependencies] del Cargo.toml.",
+        codeExample: `// main.rs
+mod my_module;          // cerca src/my_module.rs oppure src/my_module/mod.rs
+fn main() {}
+
+// src/my_module.rs   (oppure src/my_module/mod.rs)
+pub fn api() {}`,
+        status: "not-started",
+      },
+      {
+        id: "mod-12",
+        rule: "use ... as ... : alias per disambiguare o accorciare",
+        explanation:
+          "Puoi importare più simboli con lo stesso nome usando alias, o per rendere più leggibile il call-site. È comune quando due moduli esportano funzioni/tipi omonimi.",
+        codeExample: `mod a { pub fn f(){ println!("A"); } }
+mod b { pub fn f(){ println!("B"); } }
+use a::f as fa;
+use b::f as fb;
+fn main(){ fa(); fb(); }`,
+        status: "not-started",
+      },
+      {
+        id: "mod-13",
+        rule: "Glob import: use modulo::* (quando sì, quando no)",
+        explanation:
+          "use modulo::* porta nel namespace corrente tutti i simboli pubblici del modulo. È comodo nei test o per moduli “preludio” interni; in produzione può ridurre la leggibilità e introdurre collisioni di nomi: usalo con parsimonia.",
+        codeExample: `mod util {
+  pub fn a() {}
+  pub fn b() {}
+}
+use util::*;
+fn main(){ a(); b(); }`,
+        status: "not-started",
+      },
+      {
+        id: "mod-14",
+        rule: "Preludio: simboli importati automaticamente per edizione",
+        explanation:
+          "Rust importa automaticamente un “preludio” appropriato all’edizione (2015/2018/2021/2024), includendo tipi usati spesso (String, Vec, Option, Result, ecc.). Per questo puoi usarli senza use esplicito. L’edizione selezionata in Cargo influisce sul modulo di preludio importato.",
+        codeExample: `// Nessun use esplicito per String/Vec/Option/Result:
+// sono nel preludio della std per la tua edizione
+fn main() {
+  let s: String = "ciao".into();
+  let v: Vec<i32> = vec![1,2,3];
+  let o: Option<i32> = Some(5);
+  let r: Result<i32, ()> = Ok(1);
+}`,
+        status: "not-started",
+      },
+    ],
+    totalCards: 14,
     completedCards: 0,
     reviewCards: 0,
   },
   {
     id: "testing",
-    title: "Test [DA FARE]",
+    title: "Test",
     description: "Unit test, integration test e testing patterns",
     icon: "🧪",
-    flashcards: createSampleFlashcards("Test", 6),
-    totalCards: 6,
+    flashcards: [
+      {
+        id: "t-1",
+        rule: "Perché testare: confidenza, refactoring e qualità",
+        explanation:
+          "Un test è codice scritto per verificare se una porzione di software funziona. I test non provano l’assenza di bug, ma aumentano la confidenza al deploy e proteggono da regressioni durante la manutenzione e il refactoring. Scriverli bene ha costo contenuto e benefici elevati nel medio periodo.",
+        codeExample: `// Idea: ogni componente con casi 'tipici' e casi limite deve avere test mirati.`,
+        status: "not-started",
+      }, // :contentReference[oaicite:1]{index=1}
+
+      {
+        id: "t-2",
+        rule: "Unit, Integration, End-to-End/Accettazione: cosa validano",
+        explanation:
+          "Unit test: singolo componente con conoscenza interna e casi limite. Integration test: correttezza dell’interfaccia fra due o più parti già unit-tested. End-to-End: comportamento dell’intero prodotto su casi d’uso reali; i test di accettazione verificano le aspettative del committente.",
+        codeExample: `// Piramide: tanti unit, meno integration, pochi E2E ad alto valore informativo.`,
+        status: "not-started",
+      }, // :contentReference[oaicite:2]{index=2}
+
+      {
+        id: "t-3",
+        rule: "Unit test in Rust: sotto-modulo #[cfg(test)]",
+        explanation:
+          "I test di unità vivono spesso in un sotto-modulo `tests` nello stesso file/modulo del codice, preceduto da `#[cfg(test)]`. Questo codice esiste solo quando compili con `cargo test`, mantenendo pulita la build di produzione.",
+        codeExample: `pub fn add(a: u64, b: u64) -> u64 { a + b }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  #[test]
+  fn it_works() {
+    let result = add(2, 2);
+    assert_eq!(result, 4);
+  }
+}`,
+        status: "not-started",
+      }, // :contentReference[oaicite:3]{index=3}
+
+      {
+        id: "t-4",
+        rule: "AAA: Arrange–Act–Assert e macro di asserzione",
+        explanation:
+          "La forma tipica di un test è: (A) Arrange: prepara dati/stat0; (A) Act: invoca il codice sotto test; (A) Assert: verifica con `assert!`, `assert_eq!`, `assert_ne!`. Le asserzioni devono esprimere il comportamento osservabile previsto.",
+        codeExample: `#[test]
+fn divide_interi() {
+  // Arrange
+  let a = 10; let b = 2;
+  // Act
+  let q = a / b;
+  // Assert
+  assert_eq!(q, 5);
+}`,
+        status: "not-started",
+      }, // :contentReference[oaicite:4]{index=4}
+
+      {
+        id: "t-5",
+        rule: "Verificare i panic: #[should_panic] ed expected=...",
+        explanation:
+          'Puoi esprimere che un test debba fallire con panico: `#[should_panic]`. Con `expected = "msg"` verifichi che il messaggio contenga la stringa data. Utile per contratti e guard-clause.',
+        codeExample: `pub fn divide(a: i32, b: i32) -> i32 {
+  if b == 0 { panic!("Divisione per zero") } else { a / b }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  #[test]
+  #[should_panic(expected = "Divisione per zero")]
+  fn test_divide_panic() { divide(10, 0); }
+}`,
+        status: "not-started",
+      }, // :contentReference[oaicite:5]{index=5}
+
+      {
+        id: "t-6",
+        rule: "Test che ritornano Result: usare ? per fallire ordinatamente",
+        explanation:
+          "Una funzione di test può ritornare `Result<(), E>`. Se usi `?`, un errore indica direttamente fallimento del test; `Ok(())` indica successo. Ciò semplifica i test che chiamano API fallibili.",
+        codeExample: `fn parse_number(s: &str) -> Result<i32, String> {
+  s.parse().map_err(|_| "Parsing fallito".to_string())
+}
+
+#[test]
+fn test_parse_valid() -> Result<(), String> {
+  let num = parse_number("42")?;
+  assert_eq!(num, 42);
+  Ok(())
+}`,
+        status: "not-started",
+      }, // :contentReference[oaicite:6]{index=6}
+
+      {
+        id: "t-7",
+        rule: "Integration test: cartella tests/ e API pubblica",
+        explanation:
+          "I test di integrazione vivono in `tests/` accanto a `src/` e trattano il crate come un utente esterno: importano solo simboli pubblici. Sono supportati per i crate libreria; ogni file in `tests/` è un binario di test separato.",
+        codeExample: `// Struttura
+// my_lib/
+//   src/lib.rs
+//   tests/calcolatrice.rs
+// In calcolatrice.rs:
+// use my_lib::*;
+// #[test] fn test_somma() { assert_eq!(somma(10, 5), 15); }`,
+        status: "not-started",
+      }, // :contentReference[oaicite:7]{index=7}
+
+      {
+        id: "t-8",
+        rule: "Eseguire test: cargo test, filtri e test ignorati",
+        explanation:
+          "`cargo test` compila in modalità test ed esegue tutti i test (inclusi eventuali doc-test). Puoi filtrare per nome (`cargo test add_`) ed includere test ignorati marcati con `#[ignore]` usando `cargo test -- --ignored`.",
+        codeExample: `#[test]
+#[ignore] // eseguito solo con -- --ignored
+fn test_lento() {
+  // simulazione workload pesante...
+}`,
+        status: "not-started",
+      }, // :contentReference[oaicite:8]{index=8}
+
+      {
+        id: "t-9",
+        rule: "Design dei test di unità: casi tipici, bordi e complessità ciclomatica",
+        explanation:
+          "Un buon set di unit test copre il comportamento tipico, i casi ai bordi e oltre il dominio previsto. Il numero di test cresce con la complessità ciclomatica del modulo: più rami, più casi vanno esercitati deliberatamente.",
+        codeExample: `// Esempio: funzioni con molti rami 'match' richiedono test per ogni variante.`,
+        status: "not-started",
+      }, // :contentReference[oaicite:9]{index=9}
+
+      {
+        id: "t-10",
+        rule: "rstest: test parametrici con #[case(...)]",
+        explanation:
+          "`rstest` permette di definire test parametrici: una singola funzione `#[rstest]` viene eseguita su più tuple di casi fornite con `#[case(...)]`. Utile per tabellare input/attesi e ridurre duplicazioni.",
+        codeExample: `use rstest::rstest;
+
+fn somma(a: i32, b: i32) -> i32 { a + b }
+
+#[rstest]
+#[case(2, 3, 5)]
+#[case(-1, 1, 0)]
+#[case(0, 0, 0)]
+fn test_somma(#[case] a: i32, #[case] b: i32, #[case] expected: i32) {
+  assert_eq!(somma(a, b), expected);
+}`,
+        status: "not-started",
+      }, // :contentReference[oaicite:10]{index=10}
+
+      {
+        id: "t-11",
+        rule: "rstest: fixture per setup riutilizzabile",
+        explanation:
+          "Con `#[fixture]` definisci funzioni di setup che creano dati di test riusabili. Nella firma del test, un parametro con lo stesso nome della fixture fa iniettare automaticamente il suo valore.",
+        codeExample: `use rstest::{fixture, rstest};
+
+#[fixture]
+fn vettore() -> Vec<i32> { vec![1, 2, 3, 4] }
+
+fn somma_vec(v: &[i32]) -> i32 { v.iter().sum() }
+
+#[rstest]
+fn test_somma_vec(vettore: Vec<i32>) {
+  assert_eq!(somma_vec(&vettore), 10);
+}`,
+        status: "not-started",
+      }, // :contentReference[oaicite:11]{index=11}
+
+      {
+        id: "t-12",
+        rule: "Esempio realistico: API con Result e test di errore/OK",
+        explanation:
+          "Progetta l’API per fallire con un tipo errore espressivo e verifica entrambi i percorsi: success e failure. Nei test di integrazione importa solo i simboli pubblici e verifica i contratti senza dipendere dai dettagli interni.",
+        codeExample: `#[derive(Debug, PartialEq)]
+pub enum CalcoloErrore { DivisionePerZero }
+
+pub fn dividi(a: i32, b: i32) -> Result<i32, CalcoloErrore> {
+  if b == 0 { Err(CalcoloErrore::DivisionePerZero) } else { Ok(a / b) }
+}
+
+// tests/calcolatrice.rs:
+// use my_lib::*;
+// #[test] fn test_divisione_ok() { assert_eq!(dividi(10, 2), Ok(5)); }
+// #[test] fn test_divisione_per_zero() { assert_eq!(dividi(1, 0), Err(CalcoloErrore::DivisionePerZero)); }`,
+        status: "not-started",
+      }, // :contentReference[oaicite:12]{index=12}
+    ],
+    totalCards: 12,
     completedCards: 0,
     reviewCards: 0,
   },
   {
     id: "channels",
-    title: "Canali [DA FARE]",
+    title: "Canali",
     description: "Comunicazione tra thread con canali e message passing",
     icon: "📡",
-    flashcards: createSampleFlashcards("Canali", 8),
-    totalCards: 8,
+    flashcards: [
+      {
+        id: "ch-can-1",
+        rule: "Due modelli: stato condiviso vs scambio di messaggi",
+        explanation:
+          "Rust supporta sia la sincronizzazione su stato condiviso (lock/condvar) sia lo scambio di messaggi (channels). Nel secondo, comunichi per sincronizzarti: chi riceve acquisisce possesso del dato e l’ordine è FIFO sul canale scelto. È una forma naturale di disaccoppiamento tra produttori e consumatori.",
+        codeExample: `// mpsc: multiple-producer, single-consumer
+use std::sync::mpsc::channel;
+use std::thread;
+fn main() {
+  let (tx, rx) = channel::<String>();
+  thread::spawn(move || { let _ = tx.send("ciao".into()); });
+  println!("{}", rx.recv().unwrap()); // blocca finché arriva
+}`,
+        status: "not-started",
+      },
+      {
+        id: "ch-can-2",
+        rule: "std::sync::mpsc::channel: Sender/Receiver, SendError/RecvError",
+        explanation:
+          "channel() restituisce (Sender<T>, Receiver<T>). send() è non bloccante (unbounded), recv() blocca senza busy wait. Se il Receiver è droppato, send() fallisce con SendError<T>. Se tutti i Sender sono droppati e la coda si svuota, recv() fallisce con RecvError. T deve implementare Send.",
+        codeExample: `use std::sync::mpsc::channel;
+fn main() {
+  let (tx, rx) = channel::<u32>();
+  let t2 = tx.clone();
+  std::thread::spawn(move || { let _ = t2.send(1); });
+  drop(tx); // chiude il canale quando la coda si svuota
+  while let Ok(v) = rx.recv() { println!("{}", v); } // termina con RecvError
+}`,
+        status: "not-started",
+      },
+      {
+        id: "ch-can-3",
+        rule: "Il messaggio trasferisce possesso (move) e funge da sincronizzazione",
+        explanation:
+          "Il producer cede il possesso del valore al canale (move); il consumer diventa l’unico owner. La ricezione accade dopo l’invio: comunicazione e sincronizzazione in un’operazione sola.",
+        codeExample: `use std::sync::mpsc::channel;
+#[derive(Debug)]
+struct Task(u32);
+fn main() {
+  let (tx, rx) = channel::<Task>();
+  std::thread::spawn(move || { let _ = tx.send(Task(7)); });
+  let t = rx.recv().unwrap(); // possesso della Task
+  println!("{:?}", t);
+}`,
+        status: "not-started",
+      },
+      {
+        id: "ch-can-4",
+        rule: "Chiudere il canale: perché droppare l’ultimo Sender è essenziale",
+        explanation:
+          "Con più produttori, il consumer resta bloccato su recv() finché c’è almeno un Sender vivo o finché restano messaggi. Droppare l’ultimo Sender segnala la chiusura: recv() termina con errore e puoi uscire dal loop in modo pulito.",
+        codeExample: `use std::sync::mpsc::channel;
+use std::thread;
+fn main() {
+  let (tx, rx) = channel::<&'static str>();
+  let mut handles = vec![];
+  for _ in 0..3 {
+    let txc = tx.clone();
+    handles.push(thread::spawn(move || { let _ = txc.send("ok"); }));
+  }
+  drop(tx); // senza questo, rx.recv() penderebbe
+  while let Ok(m) = rx.recv() { println!("{}", m); }
+  for h in handles { let _ = h.join(); }
+}`,
+        status: "not-started",
+      },
+      {
+        id: "ch-can-5",
+        rule: "Receiver come iteratore: into_iter, iter, try_iter",
+        explanation:
+          "Receiver implementa IntoIterator in tre varianti: into_iter(self) (consuma il Receiver e blocca ad ogni next), iter(&self) (borrow, blocca come sopra, termina quando tutti i Sender sono droppati) e try_iter(&self) (non bloccante: None se la coda è vuota).",
+        codeExample: `use std::sync::mpsc::channel;
+fn main() {
+  let (tx, rx) = channel::<i32>();
+  std::thread::spawn(move || { for i in 1..=10 { let _ = tx.send(i); } });
+  rx.iter().skip_while(|v| *v < 8).take(4)
+    .filter(|v| v % 2 == 1)
+    .map(|v| format!("Stampo {}", v))
+    .for_each(|s| println!("{}", s));
+}`,
+        status: "not-started",
+      },
+      {
+        id: "ch-can-6",
+        rule: "Canali sincroni: sync_channel(cap) e rendezvous (cap=0)",
+        explanation:
+          "sync_channel(cap) crea un canale bounded: send() blocca quando ci sono cap messaggi pendenti finché qualcuno non legge. Con cap=0 ottieni un canale di rendezvous: send e recv devono sovrapporsi temporalmente.",
+        codeExample: `use std::sync::mpsc::sync_channel;
+use std::time::Duration;
+use std::thread;
+fn main() {
+  let (tx, rx) = sync_channel::<i32>(1);
+  thread::spawn(move || { let _ = tx.send(1); let _ = tx.send(2); });
+  println!("{}", rx.recv().unwrap());
+  thread::sleep(Duration::from_millis(500));
+  println!("{}", rx.recv().unwrap());
+}`,
+        status: "not-started",
+      },
+      {
+        id: "ch-can-7",
+        rule: "Crossbeam channel: MPMC bounded/unbounded e select!",
+        explanation:
+          "crossbeam_channel offre canali MPMC (più consumer) sia bounded sia unbounded, con API ergonomiche e select! per attese su più canali. Disponibili anche after(duration) e tick(period) per timeout/heartbeat.",
+        codeExample: `use crossbeam_channel::{bounded, select, tick, after};
+use std::time::Duration;
+fn main() {
+  let (s, r) = bounded::<&'static str>(1);
+  let tmo = after(Duration::from_secs(2));
+  let hb  = tick(Duration::from_millis(500));
+  std::thread::spawn(move || { let _ = s.send("done"); });
+  loop {
+    select! {
+      recv(hb) -> _ => println!("heartbeat"),
+      recv(tmo) -> _ => { println!("timeout"); break; }
+      recv(r) -> msg => { println!("{}", msg.unwrap()); break; }
+    }
+  }
+}`,
+        status: "not-started",
+      },
+      {
+        id: "ch-can-8",
+        rule: "Pattern Fan-Out / Fan-In con Crossbeam",
+        explanation:
+          "Un canale distribuisce lavoro a N worker (fan-out) e un secondo canale raccoglie i risultati (fan-in). Cloni il Receiver in ingresso e il Sender in uscita. Chiudi gli estremi per far terminare naturalmente i loop.",
+        codeExample: `use crossbeam_channel::{bounded, Sender, Receiver};
+use std::{thread, time::Duration};
+fn worker(id: usize, rx: Receiver<i32>, tx: Sender<String>) {
+  while let Ok(v) = rx.recv() {
+    thread::sleep(Duration::from_millis(50));
+    tx.send(format!("W{} ({})", id, v)).unwrap();
+  }
+}
+fn main() {
+  let (tx_in, rx_in) = bounded::<i32>(8);
+  let (tx_out, rx_out) = bounded::<String>(8);
+  let mut hs = vec![];
+  for i in 0..3 {
+    let rx = rx_in.clone(); let tx = tx_out.clone();
+    hs.push(thread::spawn(move || worker(i, rx, tx)));
+  }
+  for i in 1..=10 { let _ = tx_in.send(i); }
+  drop(tx_in); drop(tx_out);
+  while let Ok(s) = rx_out.recv() { println!("{}", s); }
+  for h in hs { let _ = h.join(); }
+}`,
+        status: "not-started",
+      },
+      {
+        id: "ch-can-9",
+        rule: "Pipeline: stadi in serie collegati da canali",
+        explanation:
+          "Una sequenza di stadi (ognuno in un thread) trasforma i dati e li inoltra al successivo. Ogni stadio fa recv() dal canale precedente, elabora, poi send() a quello successivo. Si chiudono i canali a fine produzione.",
+        codeExample: `use crossbeam_channel::bounded;
+use std::thread;
+fn s1(rx_in: crossbeam_channel::Receiver<i32>, tx_out: crossbeam_channel::Sender<String>) {
+  while let Ok(v) = rx_in.recv() { let _ = tx_out.send(format!("S1({})", v)); }
+}
+fn s2(rx_in: crossbeam_channel::Receiver<String>, tx_out: crossbeam_channel::Sender<String>) {
+  while let Ok(v) = rx_in.recv() { let _ = tx_out.send(format!("S2( {} )", v)); }
+}
+fn main() {
+  let (tx,  rx ) = bounded::<i32>(8);
+  let (tx1, rx1) = bounded::<String>(8);
+  let (tx2, rx2) = bounded::<String>(8);
+  let h1 = thread::spawn(move || s1(rx,  tx1));
+  let h2 = thread::spawn(move || s2(rx1, tx2));
+  for i in 1..=5 { let _ = tx.send(i); }
+  drop(tx);
+  while let Ok(out) = rx2.recv() { println!("{}", out); }
+  let _ = h1.join(); let _ = h2.join();
+}`,
+        status: "not-started",
+      },
+      {
+        id: "ch-can-10",
+        rule: "Queue concorrenti: ArrayQueue (bounded) vs SegQueue (unbounded)",
+        explanation:
+          "crossbeam::queue::ArrayQueue è una coda circolare bounded lock-free: push fallisce se piena; pop restituisce Option. SegQueue è unbounded e non bloccante: push non fallisce; pop restituisce Option (None se vuota). Sono alternative a canali quando non serve il blocco.",
+        codeExample: `use crossbeam_queue::{ArrayQueue, SegQueue};
+use std::{sync::Arc, thread, time::Duration};
+fn main() {
+  let q = Arc::new(ArrayQueue::new(2));
+  let qc = q.clone();
+  let h = thread::spawn(move || {
+    loop { if let Some(x) = qc.pop() { println!("pop {}", x); } else { break; } }
+  });
+  // riempi e svuota a ritmo
+  for i in 0..4 {
+    while q.push(i).is_err() { thread::sleep(Duration::from_millis(1)); }
+  }
+  let _ = h.join();
+  let sq = SegQueue::new();
+  sq.push(1); sq.push(2);
+  println!("{:?} {:?}", sq.pop(), sq.pop());
+}`,
+        status: "not-started",
+      },
+      {
+        id: "ch-can-11",
+        rule: "Work-stealing con crossbeam::deque (Worker/Stealer/Injector)",
+        explanation:
+          "Ogni thread ha una deque locale (Worker). Gli altri rubano lavoro con Stealer; un Injector globale inietta nuovi task. Il furto avviene da capo opposto per ridurre contese; utile per scheduler personalizzati.",
+        codeExample: `use crossbeam_deque::{Injector, Steal, Worker};
+use std::sync::Arc;
+fn main() {
+  let injector = Arc::new(Injector::new());
+  let worker = Worker::new_fifo();
+  let stealer = worker.stealer();
+  for i in 1..=3 { worker.push(format!("task {}", i)); }
+  for i in 4..=6 { injector.push(format!("task {}", i)); }
+  let s = stealer.clone(); let inj = injector.clone();
+  let h = std::thread::spawn(move || {
+    loop {
+      match s.steal().or_else(|| inj.steal()) {
+        Steal::Success(t) => println!("[ladro] {}", t),
+        Steal::Retry => continue,
+        Steal::Empty => break,
+      }
+    }
+  });
+  while let Some(t) = worker.pop() { println!("[main] {}", t); }
+  let _ = h.join();
+}`,
+        status: "not-started",
+      },
+      {
+        id: "ch-can-12",
+        rule: "Rayon: join() e par_iter() su thread-pool con work-stealing",
+        explanation:
+          "Rayon semplifica il data-parallelism: join(f,g) esegue due task in parallelo; par_iter() parallelizza iteratori su un thread-pool con work-stealing (basato su deque). Ottieni parallelismo senza gestire esplicitamente i thread.",
+        codeExample: `use rayon::prelude::*;
+use rayon::join;
+fn main() {
+  let (a, b) = join(|| (1..=25_000).sum::<i32>(),
+                    || (1..=12).product::<i32>());
+  println!("join -> {}", a + b);
+  let sum: i64 = (0..1_000_000i64).into_par_iter().sum();
+  println!("par_iter sum {}", sum);
+}`,
+        status: "not-started",
+      },
+      {
+        id: "ch-can-13",
+        rule: "AtomicCell: scambio lock-free di valori arbitrari (se Send)",
+        explanation:
+          "crossbeam_utils::atomic::AtomicCell<T> generalizza le atomiche a tipi qualsiasi (se Send). Operazioni come swap/take/set permettono di passare un payload tra thread senza lock, utile per hand-off semplici.",
+        codeExample: `use crossbeam_utils::atomic::AtomicCell;
+use std::{sync::Arc, thread, time::Duration};
+fn main() {
+  let cell = Arc::new(AtomicCell::new(None::<String>));
+  let p = cell.clone();
+  let prod = thread::spawn(move || {
+    thread::sleep(Duration::from_millis(100));
+    let _ = p.swap(Some("hello".into()));
+  });
+  let c = cell.clone();
+  let cons = thread::spawn(move || {
+    loop {
+      if let Some(msg) = c.take() { println!("{}", msg); break; }
+      thread::sleep(Duration::from_millis(10));
+    }
+  });
+  let _ = prod.join(); let _ = cons.join();
+}`,
+        status: "not-started",
+      },
+      {
+        id: "ch-can-14",
+        rule: "Glossario pratico: unbounded/bounded, backpressure, sync/async",
+        explanation:
+          "Unbounded: coda illimitata (send non blocca). Bounded: capacità fissa → backpressure (send blocca quando piena). Comunicazione sincrona (rendezvous cap=0): mittente e destinatario devono coincidere temporalmente; asincrona: il mittente non attende il destinatario.",
+        codeExample: `// Unbounded: std::sync::mpsc::channel()
+// Bounded: crossbeam_channel::bounded(n)
+// Rendezvous: sync_channel(0) oppure bounded(0)`,
+        status: "not-started",
+      },
+    ],
+    totalCards: 14,
     completedCards: 0,
     reviewCards: 0,
   },
@@ -2236,6 +4059,319 @@ fn main() { barrier_demo(); let v = LOGGER.get_or_init(|| "init una volta"); pri
       },
     ],
     totalCards: 14,
+    completedCards: 0,
+    reviewCards: 0,
+  },
+  {
+    id: "review-5",
+    title: "Ripasso #5",
+    description:
+      "Sfide di verifica sulla concorrenza (con soluzioni spiegate).",
+    icon: "🧩",
+    challenges: [
+      {
+        id: "ch-1",
+        prompt:
+          "Thread e cattura di una variabile stack: perché NON compila senza move? Come sistemare?",
+        code: `use std::thread;
+fn main() {
+  let mut numero = 5;
+  let handle = thread::spawn(|| {
+    let x = 2;
+    numero += x;
+    println!("Numero incrementato di {}. Nuovo valore: {}", x, numero);
+    numero
+  });
+  let result = handle.join();
+  match result {
+    Ok(res) => { println!("Il risultato è {:?}", res); }
+    Err(err) => { println!("Errore {:?}", err); }
+  }
+}`,
+        solution: `La closure passata a thread::spawn deve essere 'static (può vivere più del chiamante) e Send. 
+Senza move, cattura "numero" per riferimento allo stack del main → riferimento non 'static e (per di più) mutabile su altro thread: il compilatore lo proibisce.
+Con move la closure prende possesso di "numero". Poiché i32 è Copy, viene copiato nella closure; l'operazione "numero += x" modifica la COPIA interna e il valore esterno resta 5.`,
+        fixes: [
+          {
+            label: "Aggiungi move (chiusura possiede la sua copia di numero)",
+            code: `use std::thread;
+fn main() {
+  let numero = 5;
+  let handle = thread::spawn(move || {
+    let x = 2;
+    let mut numero = numero; // copia locale
+    numero += x;
+    println!("Numero incrementato di {}. Nuovo valore: {}", x, numero);
+    numero
+  });
+  println!("join: {:?}", handle.join());
+}`,
+          },
+          {
+            label:
+              "Condividere e mutare davvero dallo stesso numero: Arc<Mutex<i32>>",
+            code: `use std::{sync::{Arc, Mutex}, thread};
+fn main() {
+  let numero = Arc::new(Mutex::new(5));
+  let th_num = numero.clone();
+  let handle = thread::spawn(move || {
+    let mut n = th_num.lock().unwrap();
+    *n += 2;
+  });
+  handle.join().unwrap();
+  println!("valore finale: {}", *numero.lock().unwrap());
+}`,
+          },
+          {
+            label:
+              "Usare thread::scope per prestare in sicurezza uno stack local",
+            code: `use std::thread;
+fn main() {
+  let mut numero = 5;
+  thread::scope(|s| {
+    s.spawn(|| {
+      let x = 2;
+      // qui sarebbe illegale mutare numero, ma leggerlo è ok se prestato immutabilmente:
+      let _ = x;
+    });
+  }); // i thread sono terminati qui
+  println!("{}", numero);
+}`,
+          },
+        ],
+        status: "not-started",
+      },
+
+      {
+        id: "ch-2",
+        prompt:
+          "AtomicUsize dentro thread::scope senza Arc né static: perché funziona?",
+        code: `use std::{thread, time::Duration};
+use std::sync::atomic::{AtomicUsize, Ordering::*};
+const SOGLIA: usize = 100;
+fn main() {
+  let num_done = AtomicUsize::new(0);
+  thread::scope(|s| {
+    // thread in background che processa 100 item
+    s.spawn(|| {
+      for i in 0..SOGLIA {
+        thread::sleep(Duration::from_nanos(1));
+        num_done.store(i + 1, Relaxed);
+      }
+    });
+    // il thread principale mostra avanzamento ogni 10ns
+    loop {
+      let n = num_done.load(Relaxed);
+      if n == SOGLIA { break; }
+      println!("Working.. {}/100 done", n);
+      thread::sleep(Duration::from_nanos(10));
+    }
+  });
+  println!("Done!");
+}`,
+        solution: `I thread sono creati dentro un **scope** delimitato: thread::scope garantisce che TUTTI i thread terminino prima di uscire dallo scope, quindi è lecito catturare per riferimento stack-local come "num_done".
+AtomicUsize è Sync, quindi il riferimento condiviso è sicuro (qui con Ordering::Relaxed per semplice contatore di progresso). Senza scope, servirebbe Arc<AtomicUsize> o una variabile 'static.`,
+        fixes: [
+          {
+            label: "Senza scope: usa Arc<AtomicUsize>",
+            code: `use std::{thread, time::Duration, sync::Arc};
+use std::sync::atomic::{AtomicUsize, Ordering::*};
+const SOGLIA: usize = 100;
+fn main() {
+  let num_done = Arc::new(AtomicUsize::new(0));
+  let bg = {
+    let nd = num_done.clone();
+    thread::spawn(move || {
+      for i in 0..SOGLIA {
+        thread::sleep(Duration::from_nanos(1));
+        nd.store(i + 1, Relaxed);
+      }
+    })
+  };
+  while num_done.load(Relaxed) != SOGLIA {
+    println!("Working.. {}/100 done", num_done.load(Relaxed));
+    thread::sleep(Duration::from_nanos(10));
+  }
+  bg.join().unwrap();
+  println!("Done!");
+}`,
+          },
+          {
+            label: "Ordering più forte (solo se serve visibilità/ordine)",
+            code: `// Sostituisci Relaxed con Release/Acquire se il valore sblocca letture/scritture successive:
+num_done.store(i + 1, std::sync::atomic::Ordering::Release);
+// ...
+let n = num_done.load(std::sync::atomic::Ordering::Acquire);`,
+          },
+        ],
+        status: "not-started",
+      },
+
+      {
+        id: "ch-3",
+        prompt:
+          "Condvar: cosa succede se non aggiorno il flag protetto prima di notify_one?",
+        code: `use std::sync::{Arc, Mutex, Condvar};
+use std::thread;
+use std::time::Duration;
+fn main() {
+  // Arc con (Mutex<bool>, Condvar)
+  let pair = Arc::new((Mutex::new(false), Condvar::new()));
+  let (mutex, cvar) = &*pair;
+  let pair2 = Arc::clone(&pair);
+  thread::spawn(move || {
+    let (mutex, cvar) = &*pair2;
+    let _started = mutex.lock().unwrap();
+    thread::sleep(Duration::from_secs(5));
+    // *_started = true;
+    cvar.notify_one();
+  });
+  let started = mutex.lock().unwrap();
+  println!("Waiting ...");
+  let _started = cvar.wait(started).unwrap();
+  println!("Thread started!");
+}`,
+        solution: `Il programma “sembra” funzionare uguale perché il thread in attesa NON controlla il predicato protetto dal mutex (il bool). 
+Le condition variable possono avere **notifiche spurie**: senza verificare la condizione al risveglio, il thread potrebbe proseguire anche se lo stato non è cambiato.
+Buona norma: impostare il flag prima di notify e attendere in un loop (o usare wait_while).`,
+        fixes: [
+          {
+            label: "Corretto: imposta il flag e attendi con wait_while",
+            code: `use std::sync::{Arc, Mutex, Condvar};
+use std::thread;
+use std::time::Duration;
+fn main() {
+  let pair = Arc::new((Mutex::new(false), Condvar::new()));
+  let (mutex, cvar) = &*pair;
+  let pair2 = Arc::clone(&pair);
+  thread::spawn(move || {
+    let (mutex, cvar) = &*pair2;
+    let mut started = mutex.lock().unwrap();
+    thread::sleep(Duration::from_secs(5));
+    *started = true;
+    cvar.notify_one();
+  });
+  let started = mutex.lock().unwrap();
+  let _started = cvar.wait_while(started, |s| !*s).unwrap();
+  println!("Thread started!");
+}`,
+          },
+          {
+            label: "Pattern classico: while !cond { wait }",
+            code: `// Equivalente esplicito:
+let mut g = mutex.lock().unwrap();
+while !*g {
+  g = cvar.wait(g).unwrap();
+}
+println!("Thread started!");`,
+          },
+        ],
+        status: "not-started",
+      },
+
+      {
+        id: "ch-4",
+        prompt:
+          "Perché questo uso di Condvar può andare in deadlock? (lock tenuto durante la join)",
+        code: `use std::{
+  sync::{Arc, Condvar, Mutex},
+  thread::sleep,
+  time::Duration,
+};
+struct Counter { value: Mutex<u32>, condvar: Condvar }
+fn main() {
+  let counter = Arc::new(Counter { value: Mutex::new(0), condvar: Condvar::new() });
+  let counter_clone = counter.clone();
+  let counting_thread = std::thread::spawn(move || loop {
+    sleep(Duration::from_millis(100));
+    let mut value = counter_clone.value.lock().unwrap();
+    *value += 1;
+    counter_clone.condvar.notify_all();
+    if *value > 15 { break; }
+  });
+  // attende finché value < 15
+  let mut value = counter.value.lock().unwrap();
+  value = counter.condvar.wait_while(value, |val| *val < 15).unwrap();
+  println!("Condition met. Value is now {}.", *value);
+  // attende il thread... ma TENENDO il lock!
+  counting_thread.join().unwrap();
+}`,
+        solution: `Deadlock: il main esce dal wait_while quando value≥15 ma **mantiene il lock** sul mutex fino a fine scope. Subito dopo chiama join: se il thread secondario ha bisogno di riacquisire il lock per proseguire/terminare, rimarrà bloccato, mentre il main aspetta la join → stallo.
+Tre modi per risolvere: (1) rilasciare il lock prima della join; (2) far terminare il thread senza necessità di riacquisire il lock (cambiare condizione/posizione della notify); (3) ridurre la durata del lock con uno scope.`,
+        fixes: [
+          {
+            label: "Soluzione 1: rilascia il lock prima della join (drop)",
+            code: `// ... dopo la stampa
+drop(value);                  // rilascio esplicito del guard
+counting_thread.join().unwrap();`,
+          },
+          {
+            label: "Soluzione 2: fai terminare il thread a value >= 15",
+            code: `use std::{
+  sync::{Arc, Condvar, Mutex},
+  thread::sleep,
+  time::Duration,
+};
+struct Counter { value: Mutex<u32>, condvar: Condvar }
+fn main() {
+  let counter = Arc::new(Counter { value: Mutex::new(0), condvar: Condvar::new() });
+  let counter_clone = counter.clone();
+  let counting_thread = std::thread::spawn(move || loop {
+    sleep(Duration::from_millis(100));
+    let mut value = counter_clone.value.lock().unwrap();
+    *value += 1;
+    counter_clone.condvar.notify_all();
+    if *value >= 15 { break; }       // termina senza necessità di altro lock
+  });
+  let mut value = counter.value.lock().unwrap();
+  value = counter.condvar.wait_while(value, |val| *val < 15).unwrap();
+  println!("Condition met. Value is now {}.", *value);
+  drop(value);                       // comunque buona pratica
+  counting_thread.join().unwrap();
+}`,
+          },
+          {
+            label:
+              "Soluzione 3: notifica finale prima del break (schema alternativo)",
+            code: `use std::{
+  sync::{Arc, Condvar, Mutex},
+  thread::sleep,
+  time::Duration,
+};
+struct Counter { value: Mutex<u32>, condvar: Condvar }
+fn main() {
+  let counter = Arc::new(Counter { value: Mutex::new(0), condvar: Condvar::new() });
+  let counter_clone = counter.clone();
+  let counting_thread = std::thread::spawn(move || loop {
+    sleep(Duration::from_millis(100));
+    let mut value = counter_clone.value.lock().unwrap();
+    *value += 1;
+    if *value > 15 {
+      counter_clone.condvar.notify_all(); // notifica di “fine”
+      break;
+    }
+  });
+  let mut value = counter.value.lock().unwrap();
+  value = counter.condvar.wait_while(value, |val| *val < 15).unwrap();
+  println!("Condition met. Value is now {}.", *value);
+  drop(value);
+  counting_thread.join().unwrap();
+}`,
+          },
+          {
+            label: "Accorcia la vita del guard con uno scope",
+            code: `{
+  let mut value = counter.value.lock().unwrap();
+  value = counter.condvar.wait_while(value, |val| *val < 15).unwrap();
+  println!("Condition met. Value is now {}.", *value);
+} // guard rilasciato qui
+counting_thread.join().unwrap();`,
+          },
+        ],
+        status: "not-started",
+      },
+    ],
+    totalCards: 4,
     completedCards: 0,
     reviewCards: 0,
   },
@@ -2638,11 +4774,11 @@ async fn main() {
   },
   {
     id: "problem-solving",
-    title: "Problem Solving [DA FARE]",
+    title: "Problem Solving [SOON]",
     description: "Pattern e tecniche per risolvere problemi complessi",
     icon: "💡",
-    flashcards: createSampleFlashcards("Problem Solving", 15),
-    totalCards: 15,
+    flashcards: createSampleFlashcards("Problem Solving", 1),
+    totalCards: 1,
     completedCards: 0,
     reviewCards: 0,
   },
