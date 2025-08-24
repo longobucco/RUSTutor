@@ -1390,7 +1390,7 @@ println!("{}", r); // finché r è vivo, s non può essere mosso
         status: "not-started",
       },
     ],
-    totalCards: 8,
+    totalCards: 14,
     completedCards: 0,
     reviewCards: 0,
   },
