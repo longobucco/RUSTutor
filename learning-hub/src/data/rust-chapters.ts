@@ -450,51 +450,8 @@ fn main() {
         ],
         status: "not-started",
       },
-      {
-        id: "ch-4",
-        prompt: "Questo codice è corretto? Spiega perché.",
-        code: 'fn main() {\n    let mut a = [ 1, 2, 3, 4 ];\n    let s2 = &mut a[0..2];\n    s2[0] = 10;\n    println!("array {:?}", a);\n    println!("slice {:?}", s2);\n}',
-        solution:
-          "Non è corretto. Finché esiste il borrow mutabile s2 su a, non puoi usare a (neanche in lettura) perché violeresti la regola: un solo riferimento mutabile OR più riferimenti immutabili, ma non entrambi contemporaneamente.",
-        fixes: [
-          {
-            label: "Limita lo scope del borrow mutabile",
-            code: 'fn main() {\n    let mut a = [1, 2, 3, 4];\n    {\n        let s2 = &mut a[0..2];\n        s2[0] = 10;\n        println!("slice {:?}", s2);\n    } // s2 rilasciato\n    println!("array {:?}", a);\n}',
-          },
-          {
-            label: "Rilascia esplicitamente il borrow prima di usare a",
-            code: 'fn main() {\n    let mut a = [1, 2, 3, 4];\n    let s2 = &mut a[0..2];\n    s2[0] = 10;\n    std::mem::drop(s2);\n    println!("array {:?}", a);\n}',
-          },
-        ],
-        status: "not-started",
-      },
-      {
-        id: "ch-5",
-        prompt: "Questo codice è corretto? Spiega perché.",
-        code: 'fn main() {\n    let mut i = 32;\n    let r = &i;\n    println!("{}", *r);\n    i = i+1;\n    let r = &i;\n    println!("{}", *r);\n}',
-        solution:
-          "Sì, è corretto con NLL (Non-Lexical Lifetimes). Il riferimento r viene usato per l'ultima volta nella println!; dopo quell'uso, il borrow immutabile termina, dunque è lecito modificare i e poi creare un nuovo riferimento.",
-        notes:
-          "Se si riutilizzasse r dopo l'assegnazione a i, allora fallirebbe.",
-        status: "not-started",
-      },
-      {
-        id: "ch-6",
-        prompt: "Per quale motivo non compila?",
-        filename: "vec3.rs",
-        code: 'fn main() {\n    let mut v = vec![ 1, 2, 3, 4 ];\n    let slice = &mut v[0..2];\n    v.push(5);\n    println!("slice {:?}", slice);\n}',
-        solution:
-          "Stesso motivo della ch-1: lo slice mutabile tiene un borrow attivo sull'intero Vec; v.push(5) necessita un nuovo borrow mutabile e può riallocare la memoria, potenzialmente invalidando lo slice.",
-        fixes: [
-          {
-            label: "Chiudi il borrow prima di push",
-            code: 'fn main() {\n    let mut v = vec![1, 2, 3, 4];\n    {\n        let slice = &mut v[0..2];\n        println!("slice {:?}", slice);\n    }\n    v.push(5);\n}',
-          },
-        ],
-        status: "not-started",
-      },
     ],
-    totalCards: 6,
+    totalCards: 3,
     completedCards: 0,
     reviewCards: 0,
   },
@@ -1061,7 +1018,7 @@ fn main() {
         status: "not-started",
       },
     ],
-    totalCards: 0,
+    totalCards: 14,
     completedCards: 0,
     reviewCards: 0,
   },

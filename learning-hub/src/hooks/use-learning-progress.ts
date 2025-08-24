@@ -106,7 +106,7 @@ export const useLearningProgress = () => {
   const calculateProgress = (): LearningProgress => {
     const totalChapters = chapters.length;
     const completedChapters = chapters.filter(
-      (c) => c.completedCards === c.totalCards
+      (c) => c.totalCards > 0 && c.completedCards === c.totalCards
     ).length;
     const totalFlashcards = chapters.reduce((sum, c) => sum + c.totalCards, 0);
     const completedFlashcards = chapters.reduce(
